@@ -211,7 +211,7 @@ def plot_pnl_distribution(df):
 
 def create_pnl_analysis_table(df):
     # Define PnL ranges
-    pnl_ranges = [(-40, -30), (-30, -20), (-20, -10), (-10, 0), (0, 10), (10, 20), (20, 30), (30, 40)]
+    pnl_ranges = [(-40, -30), (-30, -20), (-20, -10), (-10, -5), (-5, 0), (0, 5), (5, 10), (10, 20), (20, 30), (30, 40)]
     # List to store dictionaries before creating DataFrame
     data = []
 
