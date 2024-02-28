@@ -2,7 +2,7 @@
 Sierra Chart futures (setup for MES currently) trade analysis tool using python w/ seaborn and matplotlib
 
 Features:
-PnL graph over time (EST time zone is default)
+PnL graph over time
 
 Heatmap of days and hours each week that are most profitable for you
 
