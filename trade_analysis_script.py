@@ -1,21 +1,52 @@
-import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output
-import plotly.graph_objs as go
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog
-import numpy as np
 
-# Function to select file
 def select_file():
+    """
+    Opens a file dialog to select a .txt file for analysis.
+    :return: The filepath of the selected file.
+    """
     root = tk.Tk()
-    root.withdraw()
+    root.withdraw()  # Hide the main window.
     file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
     return file_path
 
-# Function to preprocess data
-def preprocess_and_calculate_pnl(filepath):
+def load_data(filepath, usecols):
+    """
+    Load the trade log data from a specified filepath.
+    :param filepath: Path to the trade log file.
+    :param usecols: Columns of interest.
+    :return: DataFrame with the loaded data.
+    """
+    return pd.read_csv(filepath, sep='\t', usecols=usecols)
+
+def preprocess_data(df):
+    """
+    Preprocess the data by adjusting prices and filtering out unwanted symbols.
+    :param df: DataFrame with the loaded data.
+    :return: Adjusted and filtered DataFrame.
+    """
+    # Adjust prices
+    df['FillPrice'] = df['FillPrice'] / 100
+    df['HighDuringPosition'] = df['HighDuringPosition'] / 100
+    df['LowDuringPosition'] = df['LowDuringPosition'] / 100
+
+    # Filter out /NQ symbols
+    df = df[~df['Symbol'].str.contains('/NQ', na=False)]
+
+    return df
+
+def add_analysis_features(df):
+    """
+    Placeholder for additional analysis features.
+    :param df: Preprocessed DataFrame.
+    :return: DataFrame with additional analysis features.
+    """
+    # Example: df['NewFeature'] = df['Column'].apply(lambda x: ...)
+    return df
+
+def main():
     usecols = [
         'TransDateTime',
         'Symbol',
@@ -26,44 +57,24 @@ def preprocess_and_calculate_pnl(filepath):
         'HighDuringPosition',
         'LowDuringPosition'
     ]
-    df = pd.read_csv(filepath, sep='\t', usecols=usecols)
-    df['FillPrice'] /= 100
-    df['HighDuringPosition'] /= 100
-    df['LowDuringPosition'] /= 100
-    df = df[df['Symbol'].str.contains('/MES')]
 
-    # Calculating P&L for closed positions only
-    df['PnL'] = np.nan
-    df.loc[df['OpenClose'] == 'C', 'PnL'] = (df['HighDuringPosition'] - df['LowDuringPosition']) * df['Quantity'] * 4 * 1.25
-    df['TransDateTime'] = pd.to_datetime(df['TransDateTime'])
-    df.sort_values(by='TransDateTime', inplace=True)
-    df['CumulativePnL'] = df['PnL'].cumsum()
-    
-    return df
+    # Select the file for analysis
+    filepath = select_file()
 
-# Initialize Dash app
-app = dash.Dash(__name__)
+    if filepath:  # Proceed if a file was selected
+        # Load the data
+        df = load_data(filepath, usecols)
 
-# App layout
-app.layout = html.Div([
-    html.Button('Select File', id='load-file', n_clicks=0),
-    dcc.Graph(id='pnl-chart')
-])
+        # Preprocess the data
+        df_preprocessed = preprocess_data(df)
 
-# Callback to update chart
-@app.callback(
-    Output('pnl-chart', 'figure'),
-    [Input('load-file', 'n_clicks')]
-)
-def update_chart(n_clicks):
-    if n_clicks > 0:
-        filepath = select_file()
-        if filepath:
-            df = preprocess_and_calculate_pnl(filepath)
-            fig = go.Figure(data=[go.Scatter(x=df['TransDateTime'], y=df['CumulativePnL'], mode='lines+markers')])
-            fig.update_layout(title='Cumulative P&L Over Time', xaxis_title='Time', yaxis_title='Cumulative P&L')
-            return fig
-    return go.Figure()
+        # Add any additional analysis features
+        df_analyzed = add_analysis_features(df_preprocessed)
 
-if __name__ == '__main__':
-    app.run_server(debug=True)
+        # Display or save your results
+        print(df_analyzed.head())
+    else:
+        print("No file selected. Exiting.")
+
+if __name__ == "__main__":
+    main()
