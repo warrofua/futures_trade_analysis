@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 from pandas.tseries.offsets import Minute
+import seaborn as sns
 
 def select_file():
     """
@@ -45,14 +46,9 @@ def preprocess_data(df):
     :param df: DataFrame with the loaded data.
     :return: Adjusted and filtered DataFrame.
     """
-    # Adjust prices
-    df['FillPrice'] = df['FillPrice'] / 100
-    df['HighDuringPosition'] = df['HighDuringPosition'] / 100
-    df['LowDuringPosition'] = df['LowDuringPosition'] / 100
-
-    # Filter out /NQ symbols
+    price_columns = ['FillPrice', 'HighDuringPosition', 'LowDuringPosition']
+    df[price_columns] = df[price_columns] / 100
     df = df[~df['Symbol'].str.contains('/NQ', na=False)]
-    
     return df
 
 def adjust_nat_times(df):
@@ -180,6 +176,63 @@ def find_nat_rows(df):
     nat_rows = df[pd.isna(df['TransDateTime'])]
     return nat_rows
 
+def aggregate_profit_by_time(df):
+    # Extract hour and day name from 'TransDateTime'
+    df['Hour'] = df['TransDateTime'].dt.hour
+    df['DayOfWeek'] = df['TransDateTime'].dt.day_name()
+    
+    # Aggregate data to calculate total or average profit by day and hour
+    profit_summary = df.groupby(['DayOfWeek', 'Hour'])['PnL'].sum().unstack(fill_value=0)
+    
+    # Sort the index based on day order
+    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    profit_summary = profit_summary.reindex(day_order)
+    
+    return profit_summary
+
+def plot_heatmap(profit_summary):
+    plt.figure(figsize=(12, 8))
+    # Use the 'RdYlGn' colormap and center the color map at 0 to differentiate positive and negative values
+    sns.heatmap(profit_summary, annot=True, cmap='RdYlGn', center=0, fmt=".1f")
+    plt.title('Profitability Heatmap by Day of Week and Hour of Day')
+    plt.ylabel('Day of Week')
+    plt.xlabel('Hour of Day')
+    plt.xticks(rotation=45)
+    plt.show()
+
+def plot_pnl_distribution(df):
+    plt.figure(figsize=(10, 6))
+    sns.histplot(df['PnL'], kde=True, color='blue')  # Histogram with KDE
+    plt.title('Distribution of Trade Profit and Loss')
+    plt.xlabel('Profit and Loss')
+    plt.ylabel('Frequency')
+    plt.grid(True)
+    plt.show()
+
+def create_pnl_analysis_table(df):
+    # Define PnL ranges
+    pnl_ranges = [(-40, -30), (-30, -20), (-20, -10), (-10, 0), (0, 10), (10, 20), (20, 30), (30, 40)]
+    # List to store dictionaries before creating DataFrame
+    data = []
+
+    for pnl_range in pnl_ranges:
+        # Filter trades within the current PnL range
+        filtered_trades = df[(df['PnL'] > pnl_range[0]) & (df['PnL'] <= pnl_range[1])]
+        # Append the count to the data list
+        data.append({'PnL Range': f'{pnl_range[0]} to {pnl_range[1]}', 
+                     'Count of Trades': filtered_trades.shape[0]})
+
+    # For trades losing or gaining more than the specified ranges
+    more_loss = df[df['PnL'] <= -40].shape[0]
+    more_gain = df[df['PnL'] > 40].shape[0]
+    data.append({'PnL Range': '<= -40', 'Count of Trades': more_loss})
+    data.append({'PnL Range': '> 40', 'Count of Trades': more_gain})
+    
+    # Create DataFrame from the list of dictionaries
+    analysis_df = pd.DataFrame(data)
+
+    return analysis_df
+
 def main():
     usecols = [
         'TransDateTime',
@@ -219,6 +272,12 @@ def main():
 
         # Plot cumulative P&L
         plot_pnl(df_with_pnl)   
+
+        profit_summary = aggregate_profit_by_time(df_with_pnl)
+        plot_heatmap(profit_summary)
+        plot_pnl_distribution(df_with_pnl)
+        pnl_analysis_table = create_pnl_analysis_table(df_with_pnl)
+        print(pnl_analysis_table)
 
     else:
         print("No file selected. Exiting.")
