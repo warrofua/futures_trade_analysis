@@ -426,41 +426,47 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / 'trade_analysis_report.html'
 
-    graph_sections = []
+    graph_cards = []
     for title, path in graph_paths:
         if path is not None:
-            graph_sections.append(f"<div class='graph-section'><h2>{title}</h2><img src='{path.name}' alt='{title}'></div>")
+            graph_cards.append(
+                f"<div class='card graph-card'><h3>{title}</h3><img src='{path.name}' alt='{title}' loading='lazy'></div>"
+            )
 
-    summary_html = f"""
-    <ul>
-        <li><strong>Total Closed Trades:</strong> {summary_stats['total_trades']}</li>
-        <li><strong>Trading Days Covered:</strong> {summary_stats['trading_days']}</li>
-        <li><strong>Total Profit/Loss:</strong> {format_currency(summary_stats['total_pnl'])}</li>
-        <li><strong>Average Daily P&amp;L:</strong> {format_currency(summary_stats['average_daily_pnl'])}</li>
-        <li><strong>Best Trade:</strong> {format_currency(summary_stats['best_trade'])}</li>
-        <li><strong>Worst Trade:</strong> {format_currency(summary_stats['worst_trade'])}</li>
-    </ul>
-    """
+    summary_items = [
+        ('Total Closed Trades', summary_stats['total_trades']),
+        ('Trading Days Covered', summary_stats['trading_days']),
+        ('Total Profit/Loss', format_currency(summary_stats['total_pnl'])),
+        ('Average Daily P&L', format_currency(summary_stats['average_daily_pnl'])),
+        ('Best Trade', format_currency(summary_stats['best_trade'])),
+        ('Worst Trade', format_currency(summary_stats['worst_trade'])),
+    ]
+    summary_html = ''.join(
+        f"<div class='stat-card'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
+        for label, value in summary_items
+    )
 
-    performance_html = f"""
-    <ul>
-        <li><strong>Expectancy (per trade):</strong> {format_currency(performance_metrics['expectancy'])}</li>
-        <li><strong>Standard Deviation of P&amp;L:</strong> {format_currency(performance_metrics['pnl_std'])}</li>
-        <li><strong>Sharpe Ratio (per trade):</strong> {format_ratio(performance_metrics['sharpe_ratio'])}</li>
-        <li><strong>Win Rate:</strong> {format_percentage(performance_metrics['win_rate'])}</li>
-        <li><strong>Loss Rate:</strong> {format_percentage(performance_metrics['loss_rate'])}</li>
-        <li><strong>Average Win:</strong> {format_currency(performance_metrics['average_win'])}</li>
-        <li><strong>Average Loss:</strong> {format_currency(performance_metrics['average_loss'])}</li>
-        <li><strong>Profit Factor:</strong> {format_ratio(performance_metrics['profit_factor'])}</li>
-        <li><strong>Reward-to-Risk Ratio:</strong> {format_ratio(performance_metrics['reward_risk_ratio'])}</li>
-        <li><strong>Max Drawdown:</strong> {format_currency(performance_metrics['max_drawdown'])}</li>
-        <li><strong>Average Trade Duration:</strong> {format_minutes(performance_metrics['average_trade_duration_minutes'])}</li>
-        <li><strong>Median Trade Duration:</strong> {format_minutes(performance_metrics['median_trade_duration_minutes'])}</li>
-        <li><strong>Total Market Exposure:</strong> {format_hours(performance_metrics['exposure_hours'])}</li>
-    </ul>
-    """
+    performance_items = [
+        ('Expectancy (per trade)', format_currency(performance_metrics['expectancy'])),
+        ('Standard Deviation of P&L', format_currency(performance_metrics['pnl_std'])),
+        ('Sharpe Ratio (per trade)', format_ratio(performance_metrics['sharpe_ratio'])),
+        ('Win Rate', format_percentage(performance_metrics['win_rate'])),
+        ('Loss Rate', format_percentage(performance_metrics['loss_rate'])),
+        ('Average Win', format_currency(performance_metrics['average_win'])),
+        ('Average Loss', format_currency(performance_metrics['average_loss'])),
+        ('Profit Factor', format_ratio(performance_metrics['profit_factor'])),
+        ('Reward-to-Risk Ratio', format_ratio(performance_metrics['reward_risk_ratio'])),
+        ('Max Drawdown', format_currency(performance_metrics['max_drawdown'])),
+        ('Average Trade Duration', format_minutes(performance_metrics['average_trade_duration_minutes'])),
+        ('Median Trade Duration', format_minutes(performance_metrics['median_trade_duration_minutes'])),
+        ('Total Market Exposure', format_hours(performance_metrics['exposure_hours'])),
+    ]
+    performance_html = ''.join(
+        f"<div class='stat-card'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
+        for label, value in performance_items
+    )
 
-    pnl_table_html = pnl_analysis_table.to_html(index=False)
+    pnl_table_html = pnl_analysis_table.to_html(index=False, classes='styled-table', border=0)
 
     html_content = f"""<!DOCTYPE html>
     <html lang='en'>
@@ -468,31 +474,168 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
         <meta charset='UTF-8'>
         <title>Trade Analysis Report</title>
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 2rem; }}
-            h1 {{ color: #2c3e50; }}
-            .graph-section {{ margin-bottom: 2rem; }}
-            img {{ max-width: 100%; height: auto; border: 1px solid #ccc; padding: 0.5rem; }}
-            table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
-            th, td {{ border: 1px solid #ddd; padding: 0.5rem; text-align: center; }}
-            th {{ background-color: #f8f9fa; }}
+            :root {{
+                --bg-color: #f5f7fb;
+                --card-bg: #ffffff;
+                --text-color: #1f2933;
+                --muted-text: #52606d;
+                --accent-color: #3b82f6;
+                --border-color: #d9e2ec;
+            }}
+            * {{ box-sizing: border-box; }}
+            body {{
+                margin: 0;
+                padding: 0;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                background: var(--bg-color);
+                color: var(--text-color);
+                line-height: 1.6;
+            }}
+            .container {{
+                max-width: 1100px;
+                margin: 0 auto;
+                padding: 2.5rem 1.5rem 3rem;
+            }}
+            .page-header {{
+                background: linear-gradient(135deg, #2563eb, #1d4ed8);
+                color: #fff;
+                padding: 2.5rem 2rem;
+                border-radius: 1.25rem;
+                box-shadow: 0 18px 45px rgba(37, 99, 235, 0.25);
+            }}
+            .page-header h1 {{
+                margin: 0 0 0.5rem;
+                font-size: 2.1rem;
+                letter-spacing: 0.02em;
+            }}
+            .page-header p {{
+                margin: 0;
+                font-weight: 500;
+                color: rgba(255, 255, 255, 0.85);
+            }}
+            section {{
+                margin-top: 2.5rem;
+            }}
+            h2 {{
+                margin-bottom: 1rem;
+                font-size: 1.5rem;
+                color: var(--text-color);
+            }}
+            .stats-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 1rem;
+            }}
+            .stat-card {{
+                background: var(--card-bg);
+                border-radius: 1rem;
+                padding: 1.25rem;
+                border: 1px solid rgba(82, 96, 109, 0.08);
+                box-shadow: 0 12px 25px rgba(15, 23, 42, 0.08);
+                display: flex;
+                flex-direction: column;
+                gap: 0.35rem;
+            }}
+            .stat-label {{
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: var(--muted-text);
+            }}
+            .stat-value {{
+                font-size: 1.35rem;
+                font-weight: 600;
+                color: var(--text-color);
+            }}
+            .card-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 1.5rem;
+            }}
+            .card {{
+                background: var(--card-bg);
+                border-radius: 1.25rem;
+                padding: 1.75rem;
+                border: 1px solid rgba(82, 96, 109, 0.08);
+                box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+            }}
+            .graph-card img {{
+                margin-top: 1rem;
+                width: 100%;
+                height: auto;
+                border-radius: 0.75rem;
+                border: 1px solid var(--border-color);
+                background: #fff;
+            }}
+            .styled-table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 1rem;
+                font-size: 0.95rem;
+                overflow: hidden;
+                border-radius: 0.85rem;
+                box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+            }}
+            .styled-table thead {{
+                background: #e0ebff;
+            }}
+            .styled-table th,
+            .styled-table td {{
+                padding: 0.85rem 1rem;
+                text-align: center;
+                border-bottom: 1px solid var(--border-color);
+            }}
+            .styled-table tbody tr:nth-child(even) {{
+                background: rgba(59, 130, 246, 0.05);
+            }}
+            @media (max-width: 640px) {{
+                .page-header {{
+                    padding: 2rem 1.5rem;
+                }}
+                .page-header h1 {{
+                    font-size: 1.8rem;
+                }}
+                .card {{
+                    padding: 1.25rem;
+                }}
+            }}
         </style>
     </head>
     <body>
-        <h1>Trade Analysis Report</h1>
-        <p>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        <section>
-            <h2>Summary Statistics</h2>
-            {summary_html}
-        </section>
-        <section>
-            <h2>Performance Metrics</h2>
-            {performance_html}
-        </section>
-        {''.join(graph_sections)}
-        <section>
-            <h2>Trade Distribution by Profit/Loss Range</h2>
-            {pnl_table_html}
-        </section>
+        <div class='container'>
+            <header class='page-header'>
+                <h1>Trade Analysis Report</h1>
+                <p>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            </header>
+
+            <section>
+                <h2>Summary Statistics</h2>
+                <div class='stats-grid'>
+                    {summary_html}
+                </div>
+            </section>
+
+            <section>
+                <h2>Performance Metrics</h2>
+                <div class='stats-grid'>
+                    {performance_html}
+                </div>
+            </section>
+
+            <section>
+                <h2>Visual Highlights</h2>
+                <div class='card-grid'>
+                    {''.join(graph_cards)}
+                </div>
+            </section>
+
+            <section>
+                <h2>Trade Distribution by Profit/Loss Range</h2>
+                <div class='card'>
+                    {pnl_table_html}
+                </div>
+            </section>
+        </div>
     </body>
     </html>"""
 
