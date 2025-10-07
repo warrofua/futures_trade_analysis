@@ -473,7 +473,8 @@ def generate_report(
     graph_paths,
     pnl_analysis_table,
     day_hour_summary_html,
-    daily_net_pnl_html
+    daily_net_pnl_html,
+    trade_highlights_html=None
 ):
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / 'trade_analysis_report.html'
@@ -845,7 +846,8 @@ def main():
             ],
             pnl_analysis_table,
             day_hour_summary_html,
-            daily_net_pnl_html
+            daily_net_pnl_html,
+            trade_highlights_html
         )
 
         print(f"Report generated at {report_path}")
