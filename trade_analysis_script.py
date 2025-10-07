@@ -8,8 +8,43 @@ import tkinter as tk
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
+from pandas.api.types import DatetimeTZDtype
 from pandas.tseries.offsets import Minute
 import seaborn as sns
+
+
+def _is_numeric(value):
+    return isinstance(value, (int, float, np.integer, np.floating))
+
+
+def format_currency(value):
+    if _is_numeric(value) and np.isfinite(value):
+        return f"${value:,.2f}"
+    return "N/A"
+
+
+def format_percentage(value):
+    if _is_numeric(value) and np.isfinite(value):
+        return f"{value * 100:.2f}%"
+    return "N/A"
+
+
+def format_ratio(value, decimals=2):
+    if _is_numeric(value) and np.isfinite(value):
+        return f"{value:.{decimals}f}"
+    return "N/A"
+
+
+def format_minutes(value, decimals=1):
+    if _is_numeric(value) and np.isfinite(value):
+        return f"{value:.{decimals}f} min"
+    return "N/A"
+
+
+def format_hours(value, decimals=2):
+    if _is_numeric(value) and np.isfinite(value):
+        return f"{value:.{decimals}f} hrs"
+    return "N/A"
 
 def select_file():
     """
@@ -91,6 +126,11 @@ def calculate_pnl(df):
     df = adjust_nat_times(df)
     df['PnL'] = 0.0  # Initialize PnL column
     df['ClosePrice'] = np.nan  # Initialize ClosePrice column
+    if isinstance(df['TransDateTime'].dtype, DatetimeTZDtype):
+        df['CloseTime'] = pd.Series(pd.NaT, index=df.index, dtype=df['TransDateTime'].dtype)
+    else:
+        df['CloseTime'] = pd.NaT  # Track the closing timestamp per trade
+    df['TradeDurationMinutes'] = np.nan  # Track how long each trade was open
     open_trades = {}  # Dictionary to track open trades by symbol
 
     for i, row in df.iterrows():
@@ -108,6 +148,12 @@ def calculate_pnl(df):
             # Assign PnL and ClosePrice to the opening trade row for consistency in display
             df.at[open_index, 'PnL'] = pnl
             df.at[open_index, 'ClosePrice'] = row['FillPrice']  # Capture the closing FillPrice
+            close_time = row['TransDateTime']
+            if pd.notna(close_time):
+                df.at[open_index, 'CloseTime'] = close_time
+                if pd.notna(open_row['TransDateTime']):
+                    trade_duration = (close_time - open_row['TransDateTime']).total_seconds() / 60
+                    df.at[open_index, 'TradeDurationMinutes'] = trade_duration
 
     df['CumulativePnL'] = df['PnL'].cumsum()
     return df
@@ -181,7 +227,23 @@ def display_pnl_table(df, num_trades=10):
     # Filter the DataFrame to only include rows where PnL calculation was performed
     # and limit the number of rows based on 'num_trades'
     df_display = df[df['PnL'] != 0].head(num_trades)[
-        ['TransDateTime', 'Symbol', 'BuySell', 'FillPrice', 'ClosePrice', 'Quantity', 'PnL', 'CumulativePnL']]
+        [
+            'TransDateTime',
+            'CloseTime',
+            'Symbol',
+            'BuySell',
+            'FillPrice',
+            'ClosePrice',
+            'Quantity',
+            'PnL',
+            'CumulativePnL',
+            'TradeDurationMinutes'
+        ]
+    ].copy()
+    if not df_display.empty:
+        df_display['TransDateTime'] = pd.to_datetime(df_display['TransDateTime']).dt.tz_localize(None)
+        df_display['CloseTime'] = pd.to_datetime(df_display['CloseTime']).dt.tz_localize(None)
+        df_display['TradeDurationMinutes'] = df_display['TradeDurationMinutes'].round(2)
     print(df_display)
 
 def find_nat_rows(df):
@@ -194,6 +256,7 @@ def find_nat_rows(df):
     return nat_rows
 
 def aggregate_profit_by_time(df):
+    df = df[df['PnL'] != 0].copy()
     # Extract hour and day name from 'TransDateTime'
     df['Hour'] = df['TransDateTime'].dt.hour
     df['DayOfWeek'] = df['TransDateTime'].dt.day_name()
@@ -240,6 +303,7 @@ def plot_pnl_distribution(df, output_dir=None, show=True):
     return image_path
 
 def create_pnl_analysis_table(df):
+    closed_trades = df[df['PnL'] != 0]
     # Define PnL ranges
     pnl_ranges = [(-40, -30), (-30, -20), (-20, -10), (-10, -5), (-5, 0), (0, 5), (5, 10), (10, 20), (20, 30), (30, 40)]
     # List to store dictionaries before creating DataFrame
@@ -247,14 +311,14 @@ def create_pnl_analysis_table(df):
 
     for pnl_range in pnl_ranges:
         # Filter trades within the current PnL range
-        filtered_trades = df[(df['PnL'] > pnl_range[0]) & (df['PnL'] <= pnl_range[1])]
+        filtered_trades = closed_trades[(closed_trades['PnL'] > pnl_range[0]) & (closed_trades['PnL'] <= pnl_range[1])]
         # Append the count to the data list
         data.append({'PnL Range': f'{pnl_range[0]} to {pnl_range[1]}', 
                      'Count of Trades': filtered_trades.shape[0]})
 
     # For trades losing or gaining more than the specified ranges
-    more_loss = df[df['PnL'] <= -40].shape[0]
-    more_gain = df[df['PnL'] > 40].shape[0]
+    more_loss = closed_trades[closed_trades['PnL'] <= -40].shape[0]
+    more_gain = closed_trades[closed_trades['PnL'] > 40].shape[0]
     data.append({'PnL Range': '<= -40', 'Count of Trades': more_loss})
     data.append({'PnL Range': '> 40', 'Count of Trades': more_gain})
     
@@ -270,16 +334,95 @@ def generate_summary_statistics(df):
     total_pnl = float(closed_trades['PnL'].sum()) if not closed_trades.empty else 0.0
     best_trade = float(closed_trades['PnL'].max()) if not closed_trades.empty else 0.0
     worst_trade = float(closed_trades['PnL'].min()) if not closed_trades.empty else 0.0
+    if not closed_trades.empty:
+        trading_days = closed_trades['TransDateTime'].dt.normalize().nunique()
+        average_daily_pnl = total_pnl / trading_days if trading_days else 0.0
+    else:
+        trading_days = 0
+        average_daily_pnl = 0.0
 
     return {
         'total_trades': total_trades,
         'total_pnl': total_pnl,
         'best_trade': best_trade,
-        'worst_trade': worst_trade
+        'worst_trade': worst_trade,
+        'trading_days': trading_days,
+        'average_daily_pnl': average_daily_pnl
     }
 
 
-def generate_report(report_dir, summary_stats, graph_paths, pnl_analysis_table):
+def calculate_performance_metrics(df):
+    closed_trades = df[df['PnL'] != 0].copy()
+    if closed_trades.empty:
+        return {
+            'expectancy': 0.0,
+            'pnl_std': 0.0,
+            'sharpe_ratio': float('nan'),
+            'win_rate': 0.0,
+            'loss_rate': 0.0,
+            'average_win': 0.0,
+            'average_loss': 0.0,
+            'profit_factor': float('nan'),
+            'reward_risk_ratio': float('nan'),
+            'max_drawdown': 0.0,
+            'average_trade_duration_minutes': float('nan'),
+            'median_trade_duration_minutes': float('nan'),
+            'total_exposure_minutes': 0.0,
+            'exposure_hours': 0.0
+        }
+
+    closed_trades = closed_trades.sort_values('TransDateTime')
+    pnl = closed_trades['PnL']
+    total_trades = len(closed_trades)
+
+    expectancy = pnl.mean()
+    pnl_std = pnl.std(ddof=1) if total_trades > 1 else 0.0
+    sharpe_ratio = (expectancy / pnl_std) * np.sqrt(total_trades) if pnl_std else float('nan')
+
+    winning_trades = pnl[pnl > 0]
+    losing_trades = pnl[pnl < 0]
+
+    win_rate = len(winning_trades) / total_trades
+    loss_rate = len(losing_trades) / total_trades
+    average_win = winning_trades.mean() if not winning_trades.empty else 0.0
+    average_loss = losing_trades.mean() if not losing_trades.empty else 0.0
+
+    total_win = winning_trades.sum()
+    total_loss = losing_trades.sum()
+    profit_factor = total_win / abs(total_loss) if total_loss != 0 else float('inf')
+    reward_risk_ratio = average_win / abs(average_loss) if average_loss != 0 else float('inf')
+
+    cumulative_pnl = pnl.cumsum()
+    running_max = cumulative_pnl.cummax()
+    drawdown = cumulative_pnl - running_max
+    max_drawdown = float(drawdown.min()) if not drawdown.empty else 0.0
+
+    closed_trades['CloseTime'] = pd.to_datetime(closed_trades['CloseTime'])
+    trade_durations = (closed_trades['CloseTime'] - pd.to_datetime(closed_trades['TransDateTime'])).dropna()
+    trade_duration_minutes = trade_durations.dt.total_seconds() / 60 if not trade_durations.empty else pd.Series(dtype=float)
+    average_trade_duration = float(trade_duration_minutes.mean()) if not trade_duration_minutes.empty else float('nan')
+    median_trade_duration = float(trade_duration_minutes.median()) if not trade_duration_minutes.empty else float('nan')
+    total_exposure_minutes = float(trade_duration_minutes.sum()) if not trade_duration_minutes.empty else 0.0
+
+    return {
+        'expectancy': float(expectancy),
+        'pnl_std': float(pnl_std),
+        'sharpe_ratio': float(sharpe_ratio) if np.isfinite(sharpe_ratio) else float('nan'),
+        'win_rate': float(win_rate),
+        'loss_rate': float(loss_rate),
+        'average_win': float(average_win) if np.isfinite(average_win) else 0.0,
+        'average_loss': float(average_loss) if np.isfinite(average_loss) else 0.0,
+        'profit_factor': float(profit_factor),
+        'reward_risk_ratio': float(reward_risk_ratio),
+        'max_drawdown': max_drawdown,
+        'average_trade_duration_minutes': average_trade_duration,
+        'median_trade_duration_minutes': median_trade_duration,
+        'total_exposure_minutes': total_exposure_minutes,
+        'exposure_hours': total_exposure_minutes / 60 if total_exposure_minutes else 0.0
+    }
+
+
+def generate_report(report_dir, summary_stats, performance_metrics, graph_paths, pnl_analysis_table):
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / 'trade_analysis_report.html'
 
@@ -291,9 +434,29 @@ def generate_report(report_dir, summary_stats, graph_paths, pnl_analysis_table):
     summary_html = f"""
     <ul>
         <li><strong>Total Closed Trades:</strong> {summary_stats['total_trades']}</li>
-        <li><strong>Total Profit/Loss:</strong> {summary_stats['total_pnl']:.2f}</li>
-        <li><strong>Best Trade:</strong> {summary_stats['best_trade']:.2f}</li>
-        <li><strong>Worst Trade:</strong> {summary_stats['worst_trade']:.2f}</li>
+        <li><strong>Trading Days Covered:</strong> {summary_stats['trading_days']}</li>
+        <li><strong>Total Profit/Loss:</strong> {format_currency(summary_stats['total_pnl'])}</li>
+        <li><strong>Average Daily P&amp;L:</strong> {format_currency(summary_stats['average_daily_pnl'])}</li>
+        <li><strong>Best Trade:</strong> {format_currency(summary_stats['best_trade'])}</li>
+        <li><strong>Worst Trade:</strong> {format_currency(summary_stats['worst_trade'])}</li>
+    </ul>
+    """
+
+    performance_html = f"""
+    <ul>
+        <li><strong>Expectancy (per trade):</strong> {format_currency(performance_metrics['expectancy'])}</li>
+        <li><strong>Standard Deviation of P&amp;L:</strong> {format_currency(performance_metrics['pnl_std'])}</li>
+        <li><strong>Sharpe Ratio (per trade):</strong> {format_ratio(performance_metrics['sharpe_ratio'])}</li>
+        <li><strong>Win Rate:</strong> {format_percentage(performance_metrics['win_rate'])}</li>
+        <li><strong>Loss Rate:</strong> {format_percentage(performance_metrics['loss_rate'])}</li>
+        <li><strong>Average Win:</strong> {format_currency(performance_metrics['average_win'])}</li>
+        <li><strong>Average Loss:</strong> {format_currency(performance_metrics['average_loss'])}</li>
+        <li><strong>Profit Factor:</strong> {format_ratio(performance_metrics['profit_factor'])}</li>
+        <li><strong>Reward-to-Risk Ratio:</strong> {format_ratio(performance_metrics['reward_risk_ratio'])}</li>
+        <li><strong>Max Drawdown:</strong> {format_currency(performance_metrics['max_drawdown'])}</li>
+        <li><strong>Average Trade Duration:</strong> {format_minutes(performance_metrics['average_trade_duration_minutes'])}</li>
+        <li><strong>Median Trade Duration:</strong> {format_minutes(performance_metrics['median_trade_duration_minutes'])}</li>
+        <li><strong>Total Market Exposure:</strong> {format_hours(performance_metrics['exposure_hours'])}</li>
     </ul>
     """
 
@@ -320,6 +483,10 @@ def generate_report(report_dir, summary_stats, graph_paths, pnl_analysis_table):
         <section>
             <h2>Summary Statistics</h2>
             {summary_html}
+        </section>
+        <section>
+            <h2>Performance Metrics</h2>
+            {performance_html}
         </section>
         {''.join(graph_sections)}
         <section>
@@ -397,9 +564,35 @@ def main():
         print(pnl_analysis_table)
 
         summary_stats = generate_summary_statistics(df_with_pnl)
+        performance_metrics = calculate_performance_metrics(df_with_pnl)
+
+        print("\nSummary Statistics:")
+        print(f"  Total Closed Trades: {summary_stats['total_trades']}")
+        print(f"  Trading Days Covered: {summary_stats['trading_days']}")
+        print(f"  Total Profit/Loss: {format_currency(summary_stats['total_pnl'])}")
+        print(f"  Average Daily P&L: {format_currency(summary_stats['average_daily_pnl'])}")
+        print(f"  Best Trade: {format_currency(summary_stats['best_trade'])}")
+        print(f"  Worst Trade: {format_currency(summary_stats['worst_trade'])}")
+
+        print("\nPerformance Metrics:")
+        print(f"  Expectancy (per trade): {format_currency(performance_metrics['expectancy'])}")
+        print(f"  Standard Deviation of P&L: {format_currency(performance_metrics['pnl_std'])}")
+        print(f"  Sharpe Ratio (per trade): {format_ratio(performance_metrics['sharpe_ratio'])}")
+        print(f"  Win Rate: {format_percentage(performance_metrics['win_rate'])}")
+        print(f"  Loss Rate: {format_percentage(performance_metrics['loss_rate'])}")
+        print(f"  Average Win: {format_currency(performance_metrics['average_win'])}")
+        print(f"  Average Loss: {format_currency(performance_metrics['average_loss'])}")
+        print(f"  Profit Factor: {format_ratio(performance_metrics['profit_factor'])}")
+        print(f"  Reward-to-Risk Ratio: {format_ratio(performance_metrics['reward_risk_ratio'])}")
+        print(f"  Max Drawdown: {format_currency(performance_metrics['max_drawdown'])}")
+        print(f"  Average Trade Duration: {format_minutes(performance_metrics['average_trade_duration_minutes'])}")
+        print(f"  Median Trade Duration: {format_minutes(performance_metrics['median_trade_duration_minutes'])}")
+        print(f"  Total Market Exposure: {format_hours(performance_metrics['exposure_hours'])}")
+
         report_path = generate_report(
             report_dir,
             summary_stats,
+            performance_metrics,
             [
                 ('Cumulative Profit and Loss Over Time', cumulative_pnl_path),
                 ('Profitability Heatmap by Day and Hour', heatmap_path),
