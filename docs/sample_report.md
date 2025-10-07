@@ -35,18 +35,18 @@ _This refreshed sample report pairs the expanded trade log (`sample_data/trade_l
 ## Visual Output Highlights
 - **Cumulative P&L line chart:** Climbs to **$1,075** after a mid-sample pullback, illustrating how the additional trade data introduces realistic drawdowns before finishing strong.
 - **PnL distribution histogram:** Shows a wider dispersion with a meaningful tail of losses, reflecting the 80% / 20% win-loss mix in the data.
-- **Profitability heatmap:** Early morning activity (05:00 ET) remains the core contributor, but Thursday and Friday midday sessions now reveal mixed results after adding losing days.
+- **Profitability heatmap:** Realized gains cluster around the early morning exits (06:00–07:00 ET), while the mid-morning (10:00–11:00 ET) sessions highlight where the tougher closes occurred.
 
 ### Profitability by Day & Hour (US/Eastern)
-| Day of Week | 05:00 | 09:00 |
-| --- | --- | --- |
-| Monday | **80.0** | **25.0** |
-| Tuesday | **230.0** | **120.0** |
-| Wednesday | **100.0** | **85.0** |
-| Thursday | **75.0** | **-25.0** |
-| Friday | **170.0** | **215.0** |
-| Saturday | — | — |
-| Sunday | — | — |
+| Day of Week | 06:00 | 07:00 | 10:00 | 11:00 |
+| --- | --- | --- | --- | --- |
+| Monday | **80.0** | **0.0** | **25.0** | **0.0** |
+| Tuesday | **30.0** | **200.0** | **0.0** | **120.0** |
+| Wednesday | **30.0** | **70.0** | **85.0** | **0.0** |
+| Thursday | **75.0** | **0.0** | **75.0** | **-100.0** |
+| Friday | **100.0** | **70.0** | **25.0** | **190.0** |
+| Saturday | — | — | — | — |
+| Sunday | — | — | — | — |
 
 ### Daily Net P&L
 | Trade Date | Net P&L ($) |
