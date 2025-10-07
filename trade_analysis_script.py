@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from html import escape
 
 import pandas as pd
 import pytz
@@ -898,15 +899,32 @@ def generate_report(
     def _render_stat_cards(items, card_class, swatches):
         card_markup = []
         for index, item in enumerate(items):
-            label, value, icon, *custom_swatch = item
-            swatch = custom_swatch[0] if custom_swatch else swatches[index % len(swatches)]
+            tooltip = None
+            swatch = None
+
+            if isinstance(item, dict):
+                label = item.get('label')
+                value = item.get('value')
+                icon = item.get('icon')
+                tooltip = item.get('tooltip')
+                swatch = item.get('swatch')
+            else:
+                label, value, icon, *extras = item
+                for extra in extras:
+                    if isinstance(extra, tuple) and len(extra) == 2:
+                        swatch = extra
+                    elif isinstance(extra, dict):
+                        tooltip = extra.get('tooltip', tooltip)
+                        if 'swatch' in extra and isinstance(extra['swatch'], (tuple, list)):
+                            swatch = tuple(extra['swatch'])
+
+            if swatch is None:
+                swatch = swatches[index % len(swatches)]
             start_color, end_color = swatch
+            tooltip_attr = f" title=\"{escape(str(tooltip))}\"" if tooltip else ""
+
             card_markup.append(
-                "<div class='stat-card {card_class}' style='--swatch-start: {start}; --swatch-end: {end};'>".format(
-                    card_class=card_class,
-                    start=start_color,
-                    end=end_color,
-                )
+                f"<div class='stat-card {card_class}' style=\"--swatch-start: {start_color}; --swatch-end: {end_color};\"{tooltip_attr}>"
                 + f"<div class='stat-emblem'><span>{icon}</span></div>"
                 + f"<div class='stat-content'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
                 + "</div>"
@@ -920,29 +938,74 @@ def generate_report(
     rolling_vol = performance_metrics.get('rolling_volatility', {})
 
     performance_items = [
-        ('Expectancy (per trade)', format_currency(performance_metrics['expectancy']), 'Σ'),
+        (
+            'Expectancy (per trade)',
+            format_currency(performance_metrics['expectancy']),
+            'Σ',
+            {'tooltip': 'Average profit or loss expected per trade after weighting win rate and payoff.'},
+        ),
         ('Standard Deviation of P&L', format_currency(performance_metrics['pnl_std']), 'σ'),
-        ('Sharpe Ratio (per trade)', format_ratio(performance_metrics['sharpe_ratio']), '∫'),
+        (
+            'Sharpe Ratio (per trade)',
+            format_ratio(performance_metrics['sharpe_ratio']),
+            '∫',
+            {'tooltip': 'Risk-adjusted return per trade relative to trade-level volatility.'},
+        ),
         ('Win Rate', format_percentage(performance_metrics['win_rate']), '✓'),
         ('Loss Rate', format_percentage(performance_metrics['loss_rate']), '✗'),
         ('Average Win', format_currency(performance_metrics['average_win']), '↗'),
         ('Average Loss', format_currency(performance_metrics['average_loss']), '↘'),
-        ('Profit Factor', format_ratio(performance_metrics['profit_factor']), 'π'),
-        ('Reward-to-Risk Ratio', format_ratio(performance_metrics['reward_risk_ratio']), '⁐'),
+        (
+            'Profit Factor',
+            format_ratio(performance_metrics['profit_factor']),
+            'π',
+            {'tooltip': 'Ratio of gross profits to gross losses; values above 1 imply net profitability.'},
+        ),
+        (
+            'Reward-to-Risk Ratio',
+            format_ratio(performance_metrics['reward_risk_ratio']),
+            '⁐',
+            {'tooltip': 'Average winning trade size divided by the magnitude of the average loss.'},
+        ),
         ('Max Drawdown', format_currency(performance_metrics['max_drawdown']), '≤'),
         ('Average Trade Duration', format_minutes(performance_metrics['average_trade_duration_minutes']), '⏲'),
         ('Median Trade Duration', format_minutes(performance_metrics['median_trade_duration_minutes']), '⏳'),
-        ('Total Market Exposure', format_hours(performance_metrics['exposure_hours']), '⦿'),
-        ('Risk of Ruin (Monte Carlo)', risk_of_ruin_display, '⚠'),
-        ('Ulcer Index', ulcer_index_display, '∇'),
+        (
+            'Total Market Exposure',
+            format_hours(performance_metrics['exposure_hours']),
+            '⦿',
+            {'tooltip': 'Total time positions were open, expressed in hours of capital at risk.'},
+        ),
+        (
+            'Risk of Ruin (Monte Carlo)',
+            risk_of_ruin_display,
+            '⚠',
+            {'tooltip': 'Probability that simulated equity paths breach the ruin threshold across Monte Carlo resamples.'},
+        ),
+        (
+            'Ulcer Index',
+            ulcer_index_display,
+            '∇',
+            {'tooltip': 'Drawdown-weighted volatility measure capturing both the depth and duration of equity declines.'},
+        ),
     ]
 
     if rolling_vol:
         window_10 = format_currency(rolling_vol.get('window_10_mean'))
         window_20 = format_currency(rolling_vol.get('window_20_latest'))
         performance_items.extend([
-            ('Avg Rolling Vol (10 trades)', window_10, '≈'),
-            ('Latest Rolling Vol (20 trades)', window_20, '≋'),
+            (
+                'Avg Rolling Vol (10 trades)',
+                window_10,
+                '≈',
+                {'tooltip': 'Average rolling standard deviation of trade P&L using a 10-trade window.'},
+            ),
+            (
+                'Latest Rolling Vol (20 trades)',
+                window_20,
+                '≋',
+                {'tooltip': 'Most recent rolling standard deviation of trade P&L measured over 20 trades.'},
+            ),
         ])
 
     payoff_distribution_section = ""
@@ -1236,6 +1299,9 @@ def generate_report(
                 align-items: center;
                 gap: 1.25rem;
                 overflow: hidden;
+            }}
+            .stat-card[title] {{
+                cursor: help;
             }}
             .stat-card::after {{
                 content: '';
