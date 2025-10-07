@@ -1,6 +1,9 @@
+from datetime import datetime
+from pathlib import Path
+
 import pandas as pd
 import pytz
-from tkinter import filedialog
+from tkinter import filedialog, TclError
 import tkinter as tk
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -136,24 +139,38 @@ def calculate_trade_pnl(open_row, close_row):
     
     return pnl
 
-def plot_pnl(df):
-    # Convert timezone-aware datetime objects to naive for plotting
-    df['TransDateTime'] = df['TransDateTime'].dt.tz_localize(None)
+def _save_figure(fig, output_dir, filename):
+    image_path = None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        image_path = output_dir / filename
+        fig.savefig(image_path, dpi=300, bbox_inches='tight')
+    return image_path
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(df['TransDateTime'], df['CumulativePnL'], marker='o', linestyle='-')
-    plt.title('Cumulative Profit and Loss Over Time')
-    plt.xlabel('Transaction Time')
-    plt.ylabel('Cumulative P&L ($)')
+
+def plot_pnl(df, output_dir=None, show=True):
+    times = df['TransDateTime'].dt.tz_localize(None)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(times, df['CumulativePnL'], marker='o', linestyle='-')
+    ax.set_title('Cumulative Profit and Loss Over Time')
+    ax.set_xlabel('Transaction Time')
+    ax.set_ylabel('Cumulative P&L ($)')
 
     num_bins = max(1, len(df) // 20)
-    ax = plt.gca()
     ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=num_bins))
 
-    plt.xticks(rotation=45)
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    fig.autofmt_xdate()
+    ax.grid(True)
+    fig.tight_layout()
+
+    image_path = _save_figure(fig, output_dir, 'cumulative_pnl.png')
+
+    if show:
+        plt.show()
+    plt.close(fig)
+
+    return image_path
 
 def display_pnl_table(df, num_trades=10):
     """
@@ -190,24 +207,37 @@ def aggregate_profit_by_time(df):
     
     return profit_summary
 
-def plot_heatmap(profit_summary):
-    plt.figure(figsize=(12, 8))
-    # Use the 'RdYlGn' colormap and center the color map at 0 to differentiate positive and negative values
-    sns.heatmap(profit_summary, annot=True, cmap='RdYlGn', center=0, fmt=".1f")
-    plt.title('Profitability Heatmap by Day of Week and Hour of Day')
-    plt.ylabel('Day of Week')
-    plt.xlabel('Hour of Day')
-    plt.xticks(rotation=45)
-    plt.show()
+def plot_heatmap(profit_summary, output_dir=None, show=True):
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.heatmap(profit_summary, annot=True, cmap='RdYlGn', center=0, fmt=".1f", ax=ax)
+    ax.set_title('Profitability Heatmap by Day of Week and Hour of Day')
+    ax.set_ylabel('Day of Week')
+    ax.set_xlabel('Hour of Day')
+    plt.setp(ax.get_xticklabels(), rotation=45)
 
-def plot_pnl_distribution(df):
-    plt.figure(figsize=(10, 6))
-    sns.histplot(df['PnL'], kde=True, color='blue')  # Histogram with KDE
-    plt.title('Distribution of Trade Profit and Loss')
-    plt.xlabel('Profit and Loss')
-    plt.ylabel('Frequency')
-    plt.grid(True)
-    plt.show()
+    image_path = _save_figure(fig, output_dir, 'profitability_heatmap.png')
+
+    if show:
+        plt.show()
+    plt.close(fig)
+
+    return image_path
+
+def plot_pnl_distribution(df, output_dir=None, show=True):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.histplot(df['PnL'], kde=True, color='blue', ax=ax)
+    ax.set_title('Distribution of Trade Profit and Loss')
+    ax.set_xlabel('Profit and Loss')
+    ax.set_ylabel('Frequency')
+    ax.grid(True)
+
+    image_path = _save_figure(fig, output_dir, 'pnl_distribution.png')
+
+    if show:
+        plt.show()
+    plt.close(fig)
+
+    return image_path
 
 def create_pnl_analysis_table(df):
     # Define PnL ranges
@@ -233,6 +263,77 @@ def create_pnl_analysis_table(df):
 
     return analysis_df
 
+
+def generate_summary_statistics(df):
+    closed_trades = df[df['PnL'] != 0]
+    total_trades = int(closed_trades.shape[0])
+    total_pnl = float(closed_trades['PnL'].sum()) if not closed_trades.empty else 0.0
+    best_trade = float(closed_trades['PnL'].max()) if not closed_trades.empty else 0.0
+    worst_trade = float(closed_trades['PnL'].min()) if not closed_trades.empty else 0.0
+
+    return {
+        'total_trades': total_trades,
+        'total_pnl': total_pnl,
+        'best_trade': best_trade,
+        'worst_trade': worst_trade
+    }
+
+
+def generate_report(report_dir, summary_stats, graph_paths, pnl_analysis_table):
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / 'trade_analysis_report.html'
+
+    graph_sections = []
+    for title, path in graph_paths:
+        if path is not None:
+            graph_sections.append(f"<div class='graph-section'><h2>{title}</h2><img src='{path.name}' alt='{title}'></div>")
+
+    summary_html = f"""
+    <ul>
+        <li><strong>Total Closed Trades:</strong> {summary_stats['total_trades']}</li>
+        <li><strong>Total Profit/Loss:</strong> {summary_stats['total_pnl']:.2f}</li>
+        <li><strong>Best Trade:</strong> {summary_stats['best_trade']:.2f}</li>
+        <li><strong>Worst Trade:</strong> {summary_stats['worst_trade']:.2f}</li>
+    </ul>
+    """
+
+    pnl_table_html = pnl_analysis_table.to_html(index=False)
+
+    html_content = f"""<!DOCTYPE html>
+    <html lang='en'>
+    <head>
+        <meta charset='UTF-8'>
+        <title>Trade Analysis Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 2rem; }}
+            h1 {{ color: #2c3e50; }}
+            .graph-section {{ margin-bottom: 2rem; }}
+            img {{ max-width: 100%; height: auto; border: 1px solid #ccc; padding: 0.5rem; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
+            th, td {{ border: 1px solid #ddd; padding: 0.5rem; text-align: center; }}
+            th {{ background-color: #f8f9fa; }}
+        </style>
+    </head>
+    <body>
+        <h1>Trade Analysis Report</h1>
+        <p>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        <section>
+            <h2>Summary Statistics</h2>
+            {summary_html}
+        </section>
+        {''.join(graph_sections)}
+        <section>
+            <h2>Trade Distribution by Profit/Loss Range</h2>
+            {pnl_table_html}
+        </section>
+    </body>
+    </html>"""
+
+    with open(report_path, 'w', encoding='utf-8') as report_file:
+        report_file.write(html_content)
+
+    return report_path
+
 def main():
     usecols = [
         'TransDateTime',
@@ -246,7 +347,20 @@ def main():
     ]
 
     # Select the file for analysis
-    filepath = select_file()
+    try:
+        filepath = select_file()
+    except TclError:
+        print("GUI file selection is not available. Falling back to sample data.")
+        filepath = None
+
+    if not filepath:
+        sample_path = Path(__file__).resolve().parent / 'sample_data' / 'trade_log_sample.txt'
+        if sample_path.exists():
+            print(f"Using sample data from {sample_path}.")
+            filepath = sample_path
+        else:
+            print("No file selected and sample data not found. Exiting.")
+            return
 
     if filepath:  # Proceed if a file was selected
         # Load the data
@@ -270,14 +384,31 @@ def main():
         # Display the table of calculations for the first 10 trades
         display_pnl_table(df_with_pnl, 10)
 
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_dir = Path('reports') / f'trade_report_{timestamp}'
+
         # Plot cumulative P&L
-        plot_pnl(df_with_pnl)   
+        cumulative_pnl_path = plot_pnl(df_with_pnl, output_dir=report_dir, show=False)
 
         profit_summary = aggregate_profit_by_time(df_with_pnl)
-        plot_heatmap(profit_summary)
-        plot_pnl_distribution(df_with_pnl)
+        heatmap_path = plot_heatmap(profit_summary, output_dir=report_dir, show=False)
+        pnl_distribution_path = plot_pnl_distribution(df_with_pnl, output_dir=report_dir, show=False)
         pnl_analysis_table = create_pnl_analysis_table(df_with_pnl)
         print(pnl_analysis_table)
+
+        summary_stats = generate_summary_statistics(df_with_pnl)
+        report_path = generate_report(
+            report_dir,
+            summary_stats,
+            [
+                ('Cumulative Profit and Loss Over Time', cumulative_pnl_path),
+                ('Profitability Heatmap by Day and Hour', heatmap_path),
+                ('Distribution of Trade Profit and Loss', pnl_distribution_path)
+            ],
+            pnl_analysis_table
+        )
+
+        print(f"Report generated at {report_path}")
 
     else:
         print("No file selected. Exiting.")
