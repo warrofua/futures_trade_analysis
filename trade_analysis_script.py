@@ -376,6 +376,93 @@ def plot_pnl_distribution(df, output_dir=None, show=True, figsize=(14, 8)):
 
     return image_path
 
+
+def simulate_equity_paths(
+    pnl_series,
+    num_paths=1000,
+    path_length=None,
+    initial_equity=0.0,
+    ruin_threshold=None,
+    percentiles=(5, 50, 95),
+    seed=None,
+):
+    """Bootstrap-resample the realised trade PnL distribution to simulate
+    prospective equity paths.
+
+    Parameters
+    ----------
+    pnl_series : pandas.Series or array-like
+        Series of realised trade-level PnL values.
+    num_paths : int, optional
+        Number of Monte Carlo resamples to generate, by default 1000.
+    path_length : int, optional
+        Length of each simulated path. Defaults to ``len(pnl_series)``.
+    initial_equity : float, optional
+        Starting account equity for the simulation, by default 0.0.
+    ruin_threshold : float, optional
+        Equity threshold representing ruin. If ``None`` the historical
+        maximum drawdown depth is used.
+    percentiles : tuple, optional
+        Percentile bands to compute, by default ``(5, 50, 95)``.
+    seed : int, optional
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    tuple[pandas.DataFrame, dict]
+        Percentile bands for each trade step and summary statistics
+        including risk of ruin and the distribution of terminal equity.
+    """
+
+    pnl_array = pd.Series(pnl_series).astype(float)
+    pnl_array = pnl_array[np.isfinite(pnl_array)]
+
+    if pnl_array.empty or num_paths <= 0:
+        empty_df = pd.DataFrame()
+        return empty_df, {
+            'risk_of_ruin': float('nan'),
+            'final_equity_percentiles': {},
+        }
+
+    rng = np.random.default_rng(seed)
+    path_length = int(path_length) if path_length else len(pnl_array)
+    path_length = max(path_length, 1)
+
+    samples = rng.choice(pnl_array.values, size=(num_paths, path_length), replace=True)
+    cumulative_paths = initial_equity + np.cumsum(samples, axis=1)
+
+    ruin_level = ruin_threshold
+    if ruin_level is None:
+        historical_cumulative = pnl_array.cumsum()
+        running_max = np.maximum.accumulate(historical_cumulative)
+        drawdowns = historical_cumulative - running_max
+        ruin_level = float(drawdowns.min()) if len(drawdowns) else 0.0
+
+    min_equity = cumulative_paths.min(axis=1)
+    risk_of_ruin = float(np.mean(min_equity <= ruin_level)) if len(min_equity) else float('nan')
+
+    percentile_values = np.percentile(cumulative_paths, percentiles, axis=0)
+    percentile_df = pd.DataFrame(
+        {
+            f"p{int(p)}": percentile_values[idx]
+            for idx, p in enumerate(percentiles)
+        }
+    )
+    percentile_df.index.name = 'trade_number'
+
+    final_equity = cumulative_paths[:, -1]
+    final_percentiles = {
+        f"p{int(p)}": float(np.percentile(final_equity, p))
+        for p in percentiles
+    }
+
+    summary = {
+        'risk_of_ruin': risk_of_ruin,
+        'final_equity_percentiles': final_percentiles,
+    }
+
+    return percentile_df, summary
+
 def create_pnl_analysis_table(df):
     closed_trades = df[df['PnL'] != 0]
     # Define PnL ranges
@@ -395,11 +482,178 @@ def create_pnl_analysis_table(df):
     more_gain = closed_trades[closed_trades['PnL'] > 40].shape[0]
     data.append({'PnL Range': '<= -40', 'Count of Trades': more_loss})
     data.append({'PnL Range': '> 40', 'Count of Trades': more_gain})
-    
+
     # Create DataFrame from the list of dictionaries
     analysis_df = pd.DataFrame(data)
 
     return analysis_df
+
+
+def summarise_drawdown_events(times, cumulative_pnl):
+    running_max = cumulative_pnl.cummax()
+    drawdown = cumulative_pnl - running_max
+
+    events = []
+    in_drawdown = False
+    start_idx = None
+    for idx, value in enumerate(drawdown):
+        if value < 0 and not in_drawdown:
+            in_drawdown = True
+            start_idx = idx
+        elif value == 0 and in_drawdown:
+            end_idx = idx
+            depth = drawdown[start_idx:end_idx].min()
+            peak_time = times.iloc[start_idx]
+            recovery_time = times.iloc[end_idx]
+            duration = end_idx - start_idx
+            events.append(
+                {
+                    'Peak Time': peak_time,
+                    'Recovery Time': recovery_time,
+                    'Depth ($)': float(depth),
+                    'Length (trades)': duration,
+                }
+            )
+            in_drawdown = False
+
+    if in_drawdown and start_idx is not None:
+        depth = drawdown[start_idx:].min()
+        peak_time = times.iloc[start_idx]
+        recovery_time = times.iloc[-1]
+        duration = len(drawdown) - start_idx
+        events.append(
+            {
+                'Peak Time': peak_time,
+                'Recovery Time': recovery_time,
+                'Depth ($)': float(depth),
+                'Length (trades)': duration,
+            }
+        )
+
+    drawdown_df = pd.DataFrame(events)
+    if not drawdown_df.empty:
+        drawdown_df = drawdown_df.sort_values('Depth ($)')
+        drawdown_df['Peak Time'] = pd.to_datetime(drawdown_df['Peak Time']).dt.tz_localize(None)
+        drawdown_df['Recovery Time'] = pd.to_datetime(drawdown_df['Recovery Time']).dt.tz_localize(None)
+    return drawdown_df
+
+
+def plot_drawdown_histogram(cumulative_pnl, output_dir=None, show=True):
+    running_max = cumulative_pnl.cummax()
+    drawdowns = running_max - cumulative_pnl
+    drawdowns = drawdowns[drawdowns > 0]
+
+    if drawdowns.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.histplot(drawdowns, bins=20, color='crimson', ax=ax)
+    ax.set_title('Histogram of Drawdown Depths')
+    ax.set_xlabel('Drawdown Depth ($)')
+    ax.set_ylabel('Frequency')
+    ax.grid(True)
+
+    image_path = _save_figure(fig, output_dir, 'drawdown_histogram.png')
+
+    if show:
+        plt.show()
+    plt.close(fig)
+
+    return image_path
+
+
+def plot_equity_simulation_bands(percentile_df, output_dir=None, show=True):
+    if percentile_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for column in percentile_df.columns:
+        ax.plot(percentile_df.index, percentile_df[column], label=column.upper())
+
+    ax.set_title('Monte Carlo Equity Curve Percentile Bands')
+    ax.set_xlabel('Trade Number')
+    ax.set_ylabel('Equity ($)')
+    ax.legend()
+    ax.grid(True)
+
+    image_path = _save_figure(fig, output_dir, 'equity_simulation_bands.png')
+
+    if show:
+        plt.show()
+    plt.close(fig)
+
+    return image_path
+
+
+def build_volatility_regime_table(pnl_series, window=10):
+    rolling_vol = pnl_series.rolling(window, min_periods=max(3, window // 2)).std(ddof=0)
+    vol_clean = rolling_vol.dropna()
+    if vol_clean.empty:
+        return None, {}
+
+    thresholds = vol_clean.quantile([0.33, 0.66])
+
+    def label_regime(value):
+        if np.isnan(value):
+            return 'Insufficient Data'
+        if value <= thresholds.iloc[0]:
+            return 'Low'
+        if value <= thresholds.iloc[1]:
+            return 'Medium'
+        return 'High'
+
+    regimes = rolling_vol.apply(label_regime)
+    regime_df = pd.DataFrame({'PnL': pnl_series, 'VolatilityRegime': regimes})
+    regime_df['IsWin'] = (regime_df['PnL'] > 0).astype(int)
+
+    grouped = regime_df.dropna(subset=['VolatilityRegime']).groupby('VolatilityRegime')
+    summary = grouped.agg(
+        Trades=('PnL', 'count'),
+        AveragePnL=('PnL', 'mean'),
+        WinRate=('IsWin', 'mean'),
+    ).reset_index()
+
+    summary['AveragePnL'] = summary['AveragePnL'].astype(float)
+    summary['WinRate'] = summary['WinRate'].astype(float)
+    summary['Trades'] = summary['Trades'].astype(int)
+
+    summary_html = summary.to_html(index=False, classes='styled-table', border=0, float_format=lambda x: f"{x:,.2f}")
+
+    thresholds_dict = {float(k): float(v) for k, v in thresholds.to_dict().items()}
+
+    return summary_html, {'thresholds': thresholds_dict, 'rolling_volatility': rolling_vol}
+
+
+def plot_volatility_regimes(volatility_series, thresholds, output_dir=None, show=True):
+    clean_series = volatility_series.dropna()
+    if clean_series.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(range(len(volatility_series)), volatility_series.values, label='Rolling Std Dev', color='#3b82f6')
+    low_threshold = thresholds.get(0.33)
+    if low_threshold is None:
+        low_threshold = thresholds.get(0.33000000000000002)
+    high_threshold = thresholds.get(0.66)
+    if high_threshold is None:
+        high_threshold = thresholds.get(0.66000000000000003)
+    if low_threshold is not None:
+        ax.axhline(low_threshold, color='#22c55e', linestyle='--', label='Low / Medium Threshold')
+    if high_threshold is not None:
+        ax.axhline(high_threshold, color='#ef4444', linestyle='--', label='Medium / High Threshold')
+    ax.set_title('Rolling Trade PnL Volatility')
+    ax.set_xlabel('Trade Number')
+    ax.set_ylabel('Rolling Std Dev ($)')
+    ax.legend()
+    ax.grid(True)
+
+    image_path = _save_figure(fig, output_dir, 'volatility_regimes.png')
+
+    if show:
+        plt.show()
+    plt.close(fig)
+
+    return image_path
 
 
 def generate_summary_statistics(df):
@@ -425,7 +679,56 @@ def generate_summary_statistics(df):
     }
 
 
-def calculate_performance_metrics(df):
+def _calculate_ulcer_index(cumulative_pnl):
+    running_max = cumulative_pnl.cummax()
+    drawdowns = cumulative_pnl - running_max
+    with np.errstate(divide='ignore', invalid='ignore'):
+        drawdown_pct = np.where(running_max != 0, drawdowns / running_max, 0)
+    drawdown_pct = drawdown_pct[~np.isnan(drawdown_pct)]
+    if drawdown_pct.size == 0:
+        return float('nan')
+    squared_drawdowns = np.square(drawdown_pct)
+    return float(np.sqrt(np.mean(squared_drawdowns)))
+
+
+def _summarise_payoff_ratios(winning_trades, average_loss, average_win):
+    if winning_trades.empty:
+        return {}
+
+    loss_abs = abs(average_loss)
+    if loss_abs > 0:
+        payoff_ratios = winning_trades / loss_abs
+    elif average_win > 0:
+        payoff_ratios = winning_trades / average_win
+    else:
+        return {}
+
+    payoff_ratios = payoff_ratios.replace([np.inf, -np.inf], np.nan).dropna()
+    if payoff_ratios.empty:
+        return {}
+
+    quantiles = payoff_ratios.quantile([0.1, 0.25, 0.5, 0.75, 0.9])
+    distribution = {f"p{int(q * 100)}": float(val) for q, val in quantiles.items()}
+    distribution['min'] = float(payoff_ratios.min())
+    distribution['max'] = float(payoff_ratios.max())
+    distribution['mean'] = float(payoff_ratios.mean())
+    return distribution
+
+
+def _rolling_volatility_stats(pnl, windows=(5, 10, 20)):
+    stats = {}
+    for window in windows:
+        rolling_std = pnl.rolling(window, min_periods=max(2, window // 2)).std(ddof=0)
+        if rolling_std.dropna().empty:
+            stats[f'window_{window}_mean'] = float('nan')
+            stats[f'window_{window}_latest'] = float('nan')
+        else:
+            stats[f'window_{window}_mean'] = float(rolling_std.mean(skipna=True))
+            stats[f'window_{window}_latest'] = float(rolling_std.iloc[-1])
+    return stats
+
+
+def calculate_performance_metrics(df, simulation_config=None):
     closed_trades = df[df['PnL'] != 0].copy()
     if closed_trades.empty:
         return {
@@ -442,7 +745,13 @@ def calculate_performance_metrics(df):
             'average_trade_duration_minutes': float('nan'),
             'median_trade_duration_minutes': float('nan'),
             'total_exposure_minutes': 0.0,
-            'exposure_hours': 0.0
+            'exposure_hours': 0.0,
+            'risk_of_ruin': float('nan'),
+            'ulcer_index': float('nan'),
+            'payoff_ratio_distribution': {},
+            'rolling_volatility': {},
+            'equity_simulation_percentiles': pd.DataFrame(),
+            'equity_simulation_summary': {}
         }
 
     closed_trades = closed_trades.sort_values('TransDateTime')
@@ -471,12 +780,29 @@ def calculate_performance_metrics(df):
     drawdown = cumulative_pnl - running_max
     max_drawdown = float(drawdown.min()) if not drawdown.empty else 0.0
 
+    ulcer_index = _calculate_ulcer_index(cumulative_pnl)
+    payoff_ratio_distribution = _summarise_payoff_ratios(winning_trades, average_loss, average_win)
+    rolling_volatility = _rolling_volatility_stats(pnl)
+
     closed_trades['CloseTime'] = pd.to_datetime(closed_trades['CloseTime'])
     trade_durations = (closed_trades['CloseTime'] - pd.to_datetime(closed_trades['TransDateTime'])).dropna()
     trade_duration_minutes = trade_durations.dt.total_seconds() / 60 if not trade_durations.empty else pd.Series(dtype=float)
     average_trade_duration = float(trade_duration_minutes.mean()) if not trade_duration_minutes.empty else float('nan')
     median_trade_duration = float(trade_duration_minutes.median()) if not trade_duration_minutes.empty else float('nan')
     total_exposure_minutes = float(trade_duration_minutes.sum()) if not trade_duration_minutes.empty else 0.0
+
+    simulation_config = simulation_config or {}
+    percentile_df, simulation_summary = simulate_equity_paths(
+        pnl,
+        num_paths=simulation_config.get('num_paths', 1000),
+        path_length=simulation_config.get('path_length'),
+        initial_equity=simulation_config.get('initial_equity', 0.0),
+        ruin_threshold=simulation_config.get('ruin_threshold', max_drawdown),
+        percentiles=simulation_config.get('percentiles', (5, 50, 95)),
+        seed=simulation_config.get('seed'),
+    )
+
+    risk_of_ruin = simulation_summary.get('risk_of_ruin', float('nan'))
 
     return {
         'expectancy': float(expectancy),
@@ -492,7 +818,13 @@ def calculate_performance_metrics(df):
         'average_trade_duration_minutes': average_trade_duration,
         'median_trade_duration_minutes': median_trade_duration,
         'total_exposure_minutes': total_exposure_minutes,
-        'exposure_hours': total_exposure_minutes / 60 if total_exposure_minutes else 0.0
+        'exposure_hours': total_exposure_minutes / 60 if total_exposure_minutes else 0.0,
+        'risk_of_ruin': float(risk_of_ruin) if np.isfinite(risk_of_ruin) else float('nan'),
+        'ulcer_index': float(ulcer_index) if np.isfinite(ulcer_index) else float('nan'),
+        'payoff_ratio_distribution': payoff_ratio_distribution,
+        'rolling_volatility': rolling_volatility,
+        'equity_simulation_percentiles': percentile_df,
+        'equity_simulation_summary': simulation_summary,
     }
 
 
@@ -504,7 +836,15 @@ def generate_report(
     pnl_analysis_table,
     day_hour_summary_html,
     daily_net_pnl_html,
-    trade_highlights_html=None
+    trade_highlights_html=None,
+    scenario_graphs=None,
+    simulation_summary_html=None,
+    drawdown_table_html=None,
+    drawdown_graph_path=None,
+    volatility_regime_html=None,
+    volatility_graph_path=None,
+    payoff_distribution_html=None,
+    rolling_volatility_html=None,
 ):
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / 'trade_analysis_report.html'
@@ -575,6 +915,10 @@ def generate_report(
 
     summary_html = _render_stat_cards(summary_items, 'summary-card', summary_swatches)
 
+    risk_of_ruin_display = format_percentage(performance_metrics.get('risk_of_ruin'))
+    ulcer_index_display = format_percentage(performance_metrics.get('ulcer_index'))
+    rolling_vol = performance_metrics.get('rolling_volatility', {})
+
     performance_items = [
         ('Expectancy (per trade)', format_currency(performance_metrics['expectancy']), 'Σ'),
         ('Standard Deviation of P&L', format_currency(performance_metrics['pnl_std']), 'σ'),
@@ -589,7 +933,49 @@ def generate_report(
         ('Average Trade Duration', format_minutes(performance_metrics['average_trade_duration_minutes']), '⏲'),
         ('Median Trade Duration', format_minutes(performance_metrics['median_trade_duration_minutes']), '⏳'),
         ('Total Market Exposure', format_hours(performance_metrics['exposure_hours']), '⦿'),
+        ('Risk of Ruin (Monte Carlo)', risk_of_ruin_display, '⚠'),
+        ('Ulcer Index', ulcer_index_display, '∇'),
     ]
+
+    if rolling_vol:
+        window_10 = format_currency(rolling_vol.get('window_10_mean'))
+        window_20 = format_currency(rolling_vol.get('window_20_latest'))
+        performance_items.extend([
+            ('Avg Rolling Vol (10 trades)', window_10, '≈'),
+            ('Latest Rolling Vol (20 trades)', window_20, '≋'),
+        ])
+
+    payoff_distribution_section = ""
+    if payoff_distribution_html:
+        payoff_distribution_section = f"""
+            <section class='payoff-section'>
+                <div class='section-heading'>
+                    <h2>Payoff Ratio Distribution</h2>
+                    <p>Quantiles of win size relative to typical loss size to frame expectancy risk.</p>
+                </div>
+                <div class='card table-card'>
+                    <div class='table-scroll'>
+                        {payoff_distribution_html}
+                    </div>
+                </div>
+            </section>
+        """
+
+    rolling_volatility_section = ""
+    if rolling_volatility_html:
+        rolling_volatility_section = f"""
+            <section class='rolling-vol-section'>
+                <div class='section-heading'>
+                    <h2>Rolling Volatility Snapshot</h2>
+                    <p>Rolling P&L dispersion stats spotlighting how trade variance evolves through the sample.</p>
+                </div>
+                <div class='card table-card'>
+                    <div class='table-scroll'>
+                        {rolling_volatility_html}
+                    </div>
+                </div>
+            </section>
+        """
     performance_html = _render_stat_cards(performance_items, 'performance-card', performance_swatches)
 
     pnl_table_html = pnl_analysis_table.to_html(index=False, classes='styled-table', border=0)
@@ -610,6 +996,110 @@ def generate_report(
             </section>
         """
 
+
+    scenario_cards = []
+    if scenario_graphs:
+        for title, path in scenario_graphs:
+            if path is not None:
+                scenario_cards.append(
+                    (
+                        "<article class='card graph-card'>"
+                        f"<div class='graph-head'><h3>{title}</h3>"
+                        f"<a href='{path.name}' target='_blank' class='graph-link'>View full size</a></div>"
+                        f"<div class='graph-canvas'><img src='{path.name}' alt='{title}' loading='lazy'></div>"
+                        "</article>"
+                    )
+                )
+
+    simulation_section = ""
+    if scenario_cards or simulation_summary_html:
+        simulation_table_block = ""
+        if simulation_summary_html:
+            simulation_table_block = f"""
+                <div class='card table-card'>
+                    <div class='table-scroll'>
+                        {simulation_summary_html}
+                    </div>
+                </div>
+            """
+        simulation_section = f"""
+            <section class='scenario-section'>
+                <div class='section-heading'>
+                    <h2>Scenario Analysis</h2>
+                    <p>Monte Carlo resamples of the trade ledger illustrate percentile outcomes and ruin likelihood.</p>
+                </div>
+                <div class='card-grid'>
+                    {''.join(scenario_cards)}
+                </div>
+                {simulation_table_block}
+            </section>
+        """
+
+    drawdown_section = ""
+    if drawdown_table_html or drawdown_graph_path is not None:
+        drawdown_graph_card = ""
+        if drawdown_graph_path is not None:
+            drawdown_graph_card = (
+                "<article class='card graph-card'>"
+                "<div class='graph-head'><h3>Drawdown Depth Histogram</h3>"
+                f"<a href='{drawdown_graph_path.name}' target='_blank' class='graph-link'>View full size</a></div>"
+                f"<div class='graph-canvas'><img src='{drawdown_graph_path.name}' alt='Drawdown Histogram' loading='lazy'></div>"
+                "</article>"
+            )
+        drawdown_table_block = ""
+        if drawdown_table_html:
+            drawdown_table_block = f"""
+                <div class='card table-card'>
+                    <div class='table-scroll'>
+                        {drawdown_table_html}
+                    </div>
+                </div>
+            """
+        drawdown_section = f"""
+            <section class='drawdown-section'>
+                <div class='section-heading'>
+                    <h2>Drawdown Diagnostics</h2>
+                    <p>Depth and duration of equity pullbacks contextualise historical pain points.</p>
+                </div>
+                <div class='card-grid'>
+                    {drawdown_graph_card}
+                </div>
+                {drawdown_table_block}
+            </section>
+        """
+
+    volatility_section = ""
+    if volatility_regime_html or volatility_graph_path is not None:
+        vol_graph_card = ""
+        if volatility_graph_path is not None:
+            vol_graph_card = (
+                "<article class='card graph-card'>"
+                "<div class='graph-head'><h3>Rolling Volatility Regimes</h3>"
+                f"<a href='{volatility_graph_path.name}' target='_blank' class='graph-link'>View full size</a></div>"
+                f"<div class='graph-canvas'><img src='{volatility_graph_path.name}' alt='Volatility Regimes' loading='lazy'></div>"
+                "</article>"
+            )
+        vol_table_block = ""
+        if volatility_regime_html:
+            vol_table_block = f"""
+                <div class='card table-card'>
+                    <div class='table-scroll'>
+                        {volatility_regime_html}
+                    </div>
+                </div>
+            """
+        volatility_section = f"""
+            <section class='volatility-section'>
+                <div class='section-heading'>
+                    <h2>Volatility Regime Breakdown</h2>
+                    <p>Trade outcomes segmented by rolling volatility bands to highlight regime dependency.</p>
+                </div>
+                <div class='card-grid'>
+                    {vol_graph_card}
+                </div>
+                {vol_table_block}
+            </section>
+        """
 
     html_content = f"""<!DOCTYPE html>
     <html lang='en'>
@@ -979,6 +1469,12 @@ def generate_report(
                     </div>
                 </section>
 
+                {simulation_section}
+                {drawdown_section}
+                {volatility_section}
+                {payoff_distribution_section}
+                {rolling_volatility_section}
+
                 <section class='profitability-section'>
                     <div class='section-heading'>
                         <h2>Profitability by Day and Hour</h2>
@@ -1095,7 +1591,77 @@ def main():
         print(pnl_analysis_table)
 
         summary_stats = generate_summary_statistics(df_with_pnl)
-        performance_metrics = calculate_performance_metrics(df_with_pnl)
+        performance_metrics = calculate_performance_metrics(
+            df_with_pnl,
+            simulation_config={'num_paths': 2000, 'percentiles': (5, 25, 50, 75, 95)}
+        )
+
+        closed_trades = df_with_pnl[df_with_pnl['PnL'] != 0].copy()
+        closed_trades = closed_trades.sort_values('TransDateTime')
+        cumulative_pnl_series = closed_trades['PnL'].cumsum()
+        drawdown_events = summarise_drawdown_events(closed_trades['TransDateTime'], cumulative_pnl_series)
+
+        drawdown_table_html = None
+        if not drawdown_events.empty:
+            drawdown_display = drawdown_events.copy()
+            drawdown_display['Peak Time'] = drawdown_display['Peak Time'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(x) else 'N/A')
+            drawdown_display['Recovery Time'] = drawdown_display['Recovery Time'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(x) else 'N/A')
+            drawdown_display['Depth ($)'] = drawdown_display['Depth ($)'].apply(lambda x: format_currency(abs(x)))
+            drawdown_display['Length (trades)'] = drawdown_display['Length (trades)'].astype(int)
+            drawdown_table_html = drawdown_display.to_html(index=False, classes='styled-table', border=0)
+
+        drawdown_hist_path = plot_drawdown_histogram(cumulative_pnl_series, output_dir=report_dir, show=False)
+
+        volatility_regime_html, volatility_info = build_volatility_regime_table(closed_trades['PnL'])
+        volatility_graph_path = None
+        if volatility_info:
+            volatility_graph_path = plot_volatility_regimes(
+                volatility_info['rolling_volatility'],
+                volatility_info['thresholds'],
+                output_dir=report_dir,
+                show=False
+            )
+
+        simulation_percentiles = performance_metrics.get('equity_simulation_percentiles', pd.DataFrame())
+        equity_simulation_path = plot_equity_simulation_bands(simulation_percentiles, output_dir=report_dir, show=False)
+        scenario_graphs = []
+        if equity_simulation_path is not None:
+            scenario_graphs.append(('Equity Curve Percentile Bands', equity_simulation_path))
+
+        simulation_summary_html = None
+        simulation_summary = performance_metrics.get('equity_simulation_summary', {})
+        if simulation_summary:
+            summary_rows = []
+            risk_of_ruin = simulation_summary.get('risk_of_ruin')
+            if risk_of_ruin is not None and np.isfinite(risk_of_ruin):
+                summary_rows.append({'Metric': 'Risk of Ruin', 'Value': format_percentage(risk_of_ruin)})
+            final_percentiles = simulation_summary.get('final_equity_percentiles', {})
+            for percentile_label, value in sorted(final_percentiles.items(), key=lambda x: float(x[0].strip('p')) if x[0].startswith('p') else x[0]):
+                summary_rows.append({'Metric': f"Final Equity {percentile_label.upper()}", 'Value': format_currency(value)})
+            if summary_rows:
+                summary_df = pd.DataFrame(summary_rows)
+                simulation_summary_html = summary_df.to_html(index=False, classes='styled-table', border=0, escape=False)
+
+        payoff_distribution_html = None
+        payoff_distribution = performance_metrics.get('payoff_ratio_distribution', {})
+        if payoff_distribution:
+            ordered_keys = ['min', 'p10', 'p25', 'p50', 'p75', 'p90', 'max', 'mean']
+            rows = []
+            for key in ordered_keys:
+                if key in payoff_distribution:
+                    rows.append({'Statistic': key.upper(), 'Value': format_ratio(payoff_distribution[key], decimals=3)})
+            if rows:
+                payoff_distribution_html = pd.DataFrame(rows).to_html(index=False, classes='styled-table', border=0)
+
+        rolling_volatility_html = None
+        rolling_volatility_stats = performance_metrics.get('rolling_volatility', {})
+        if rolling_volatility_stats:
+            rows = []
+            for label, value in rolling_volatility_stats.items():
+                display_label = label.replace('_', ' ').title()
+                rows.append({'Window Metric': display_label, 'Value': format_currency(value)})
+            if rows:
+                rolling_volatility_html = pd.DataFrame(rows).to_html(index=False, classes='styled-table', border=0)
 
         print("\nSummary Statistics:")
         print(f"  Total Closed Trades: {summary_stats['total_trades']}")
@@ -1119,6 +1685,8 @@ def main():
         print(f"  Average Trade Duration: {format_minutes(performance_metrics['average_trade_duration_minutes'])}")
         print(f"  Median Trade Duration: {format_minutes(performance_metrics['median_trade_duration_minutes'])}")
         print(f"  Total Market Exposure: {format_hours(performance_metrics['exposure_hours'])}")
+        print(f"  Risk of Ruin (Monte Carlo): {format_percentage(performance_metrics['risk_of_ruin'])}")
+        print(f"  Ulcer Index: {format_percentage(performance_metrics['ulcer_index'])}")
 
         report_path = generate_report(
             report_dir,
@@ -1132,7 +1700,15 @@ def main():
             pnl_analysis_table,
             day_hour_summary_html,
             daily_net_pnl_html,
-            trade_highlights_html
+            trade_highlights_html,
+            scenario_graphs=scenario_graphs,
+            simulation_summary_html=simulation_summary_html,
+            drawdown_table_html=drawdown_table_html,
+            drawdown_graph_path=drawdown_hist_path,
+            volatility_regime_html=volatility_regime_html,
+            volatility_graph_path=volatility_graph_path,
+            payoff_distribution_html=payoff_distribution_html,
+            rolling_volatility_html=rolling_volatility_html,
         )
 
         print(f"Report generated at {report_path}")
