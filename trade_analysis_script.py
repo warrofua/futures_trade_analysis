@@ -491,36 +491,42 @@ def generate_report(
             )
 
     summary_items = [
-        ('Total Closed Trades', summary_stats['total_trades']),
-        ('Trading Days Covered', summary_stats['trading_days']),
-        ('Total Profit/Loss', format_currency(summary_stats['total_pnl'])),
-        ('Average Daily P&L', format_currency(summary_stats['average_daily_pnl'])),
-        ('Best Trade', format_currency(summary_stats['best_trade'])),
-        ('Worst Trade', format_currency(summary_stats['worst_trade'])),
+        ('Total Closed Trades', summary_stats['total_trades'], '\\u25a3'),
+        ('Trading Days Covered', summary_stats['trading_days'], '\\u23f1'),
+        ('Total Profit/Loss', format_currency(summary_stats['total_pnl']), '\\u2191'),
+        ('Average Daily P&L', format_currency(summary_stats['average_daily_pnl']), '\\u03bc'),
+        ('Best Trade', format_currency(summary_stats['best_trade']), '\\u2605'),
+        ('Worst Trade', format_currency(summary_stats['worst_trade']), '\\u25bc'),
     ]
     summary_html = ''.join(
-        f"<div class='stat-card'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
-        for label, value in summary_items
+        "<div class='stat-card summary-card'>"
+        f"<div class='stat-emblem'><span>{icon}</span></div>"
+        f"<div class='stat-content'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
+        "</div>"
+        for label, value, icon in summary_items
     )
 
     performance_items = [
-        ('Expectancy (per trade)', format_currency(performance_metrics['expectancy'])),
-        ('Standard Deviation of P&L', format_currency(performance_metrics['pnl_std'])),
-        ('Sharpe Ratio (per trade)', format_ratio(performance_metrics['sharpe_ratio'])),
-        ('Win Rate', format_percentage(performance_metrics['win_rate'])),
-        ('Loss Rate', format_percentage(performance_metrics['loss_rate'])),
-        ('Average Win', format_currency(performance_metrics['average_win'])),
-        ('Average Loss', format_currency(performance_metrics['average_loss'])),
-        ('Profit Factor', format_ratio(performance_metrics['profit_factor'])),
-        ('Reward-to-Risk Ratio', format_ratio(performance_metrics['reward_risk_ratio'])),
-        ('Max Drawdown', format_currency(performance_metrics['max_drawdown'])),
-        ('Average Trade Duration', format_minutes(performance_metrics['average_trade_duration_minutes'])),
-        ('Median Trade Duration', format_minutes(performance_metrics['median_trade_duration_minutes'])),
-        ('Total Market Exposure', format_hours(performance_metrics['exposure_hours'])),
+        ('Expectancy (per trade)', format_currency(performance_metrics['expectancy']), '\\u03a3'),
+        ('Standard Deviation of P&L', format_currency(performance_metrics['pnl_std']), '\\u03c3'),
+        ('Sharpe Ratio (per trade)', format_ratio(performance_metrics['sharpe_ratio']), '\\u222b'),
+        ('Win Rate', format_percentage(performance_metrics['win_rate']), '\\u2713'),
+        ('Loss Rate', format_percentage(performance_metrics['loss_rate']), '\\u2717'),
+        ('Average Win', format_currency(performance_metrics['average_win']), '\\u2197'),
+        ('Average Loss', format_currency(performance_metrics['average_loss']), '\\u2198'),
+        ('Profit Factor', format_ratio(performance_metrics['profit_factor']), '\\u03c0'),
+        ('Reward-to-Risk Ratio', format_ratio(performance_metrics['reward_risk_ratio']), '\\u2050'),
+        ('Max Drawdown', format_currency(performance_metrics['max_drawdown']), '\\u2264'),
+        ('Average Trade Duration', format_minutes(performance_metrics['average_trade_duration_minutes']), '\\u23f2'),
+        ('Median Trade Duration', format_minutes(performance_metrics['median_trade_duration_minutes']), '\\u23f3'),
+        ('Total Market Exposure', format_hours(performance_metrics['exposure_hours']), '\\u29bf'),
     ]
     performance_html = ''.join(
-        f"<div class='stat-card'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
-        for label, value in performance_items
+        "<div class='stat-card performance-card'>"
+        f"<div class='stat-emblem'><span>{icon}</span></div>"
+        f"<div class='stat-content'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
+        "</div>"
+        for label, value, icon in performance_items
     )
 
     pnl_table_html = pnl_analysis_table.to_html(index=False, classes='styled-table', border=0)
@@ -543,76 +549,179 @@ def generate_report(
         <title>Trade Analysis Report</title>
         <style>
             :root {{
-                --bg-color: #f5f7fb;
+                --bg-color: #eef1f8;
+                --bg-gradient: radial-gradient(120% 120% at 15% 20%, #f9fbff 0%, #e5ebf8 55%, #dce4f3 100%);
                 --card-bg: #ffffff;
-                --text-color: #1f2933;
-                --muted-text: #52606d;
-                --accent-color: #3b82f6;
-                --border-color: #d9e2ec;
+                --card-tint: linear-gradient(140deg, rgba(255, 255, 255, 0.9) 0%, rgba(238, 244, 255, 0.65) 100%);
+                --text-color: #101827;
+                --muted-text: #5c6b80;
+                --accent-color: #1d4ed8;
+                --accent-soft: #60a5fa;
+                --accent-alt: #6366f1;
+                --accent-warm: #f59e0b;
+                --border-color: #cbd5e1;
+                --divider-color: rgba(16, 24, 39, 0.08);
+                --shadow-soft: 0 18px 45px rgba(15, 23, 42, 0.12);
+                --shadow-strong: 0 22px 55px rgba(15, 23, 42, 0.16);
             }}
             * {{ box-sizing: border-box; }}
             body {{
                 margin: 0;
                 padding: 0;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
-                background: var(--bg-color);
+                background: var(--bg-gradient);
                 color: var(--text-color);
                 line-height: 1.6;
+                font-weight: 400;
+                letter-spacing: 0.01em;
             }}
             .container {{
                 max-width: 1100px;
                 margin: 0 auto;
-                padding: 2.5rem 1.5rem 3rem;
+                padding: 2.75rem 1.75rem 3.25rem;
             }}
             .page-header {{
-                background: linear-gradient(135deg, #2563eb, #1d4ed8);
+                background: linear-gradient(135deg, var(--accent-color), #1e3a8a 50%, #312e81 100%);
                 color: #fff;
-                padding: 2.5rem 2rem;
+                padding: 2.75rem 2.5rem;
                 border-radius: 1.25rem;
-                box-shadow: 0 18px 45px rgba(37, 99, 235, 0.25);
+                box-shadow: var(--shadow-strong);
+                position: relative;
+                overflow: hidden;
+            }}
+            .page-header::after {{
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: radial-gradient(circle at top right, rgba(96, 165, 250, 0.35), transparent 55%);
+                pointer-events: none;
             }}
             .page-header h1 {{
                 margin: 0 0 0.5rem;
-                font-size: 2.1rem;
+                font-size: 2.25rem;
+                font-weight: 700;
                 letter-spacing: 0.02em;
             }}
             .page-header p {{
                 margin: 0;
-                font-weight: 500;
-                color: rgba(255, 255, 255, 0.85);
+                font-weight: 400;
+                color: rgba(255, 255, 255, 0.82);
             }}
             section {{
                 margin-top: 2.5rem;
+                position: relative;
             }}
             h2 {{
                 margin-bottom: 1rem;
                 font-size: 1.5rem;
+                font-weight: 600;
                 color: var(--text-color);
+                letter-spacing: 0.015em;
             }}
-            .stats-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-                gap: 1rem;
-            }}
-            .stat-card {{
-                background: var(--card-bg);
-                border-radius: 1rem;
-                padding: 1.25rem;
-                border: 1px solid rgba(82, 96, 109, 0.08);
-                box-shadow: 0 12px 25px rgba(15, 23, 42, 0.08);
+            .section-header {{
                 display: flex;
                 flex-direction: column;
                 gap: 0.35rem;
+                margin-bottom: 1.5rem;
+            }}
+            .section-subtitle {{
+                font-size: 0.92rem;
+                color: var(--muted-text);
+                font-weight: 400;
+            }}
+            .stats-section {{
+                background: var(--card-tint);
+                border-radius: 1.5rem;
+                padding: 2.1rem 2.25rem 2.4rem;
+                border: 1px solid rgba(99, 102, 241, 0.12);
+                box-shadow: var(--shadow-soft);
+                overflow: hidden;
+            }}
+            .stats-section::before {{
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: linear-gradient(120deg, rgba(99, 102, 241, 0.09) 0%, rgba(14, 116, 144, 0.04) 52%, transparent 100%);
+                pointer-events: none;
+            }}
+            .summary-section::before {{
+                background: linear-gradient(120deg, rgba(96, 165, 250, 0.12) 0%, rgba(99, 102, 241, 0.06) 52%, transparent 100%);
+            }}
+            .performance-section::before {{
+                background: linear-gradient(120deg, rgba(251, 191, 36, 0.14) 0%, rgba(96, 165, 250, 0.06) 48%, transparent 100%);
+            }}
+            .stats-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                gap: 1.4rem;
+            }}
+            .stat-card {{
+                position: relative;
+                background: rgba(255, 255, 255, 0.94);
+                border-radius: 1.25rem;
+                padding: 1.5rem;
+                border: 1px solid var(--divider-color);
+                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+                display: flex;
+                align-items: center;
+                gap: 1.25rem;
+                transition: transform 0.2s ease, box-shadow 0.2s ease;
+                overflow: hidden;
+            }}
+            .stat-card::after {{
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: linear-gradient(140deg, rgba(255, 255, 255, 0.9) 0%, rgba(148, 163, 184, 0.08) 85%, transparent 100%);
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                pointer-events: none;
+            }}
+            .stat-card:hover {{
+                transform: translateY(-4px);
+                box-shadow: var(--shadow-strong);
+            }}
+            .stat-card:hover::after {{
+                opacity: 1;
+            }}
+            .stat-emblem {{
+                flex-shrink: 0;
+                width: 3rem;
+                height: 3.25rem;
+                border-radius: 1rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: #fff;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+                position: relative;
+                z-index: 1;
+            }}
+            .summary-card .stat-emblem {{
+                background: linear-gradient(135deg, var(--accent-color), var(--accent-soft));
+            }}
+            .performance-card .stat-emblem {{
+                background: linear-gradient(135deg, var(--accent-warm), var(--accent-alt));
+            }}
+            .stat-content {{
+                display: flex;
+                flex-direction: column;
+                gap: 0.45rem;
+                position: relative;
+                z-index: 1;
             }}
             .stat-label {{
-                font-size: 0.85rem;
+                font-size: 0.82rem;
                 text-transform: uppercase;
-                letter-spacing: 0.08em;
+                letter-spacing: 0.12em;
                 color: var(--muted-text);
+                font-weight: 500;
             }}
             .stat-value {{
-                font-size: 1.35rem;
-                font-weight: 600;
+                font-size: 1.5rem;
+                font-weight: 700;
                 color: var(--text-color);
             }}
             .card-grid {{
@@ -621,11 +730,21 @@ def generate_report(
                 gap: 1.5rem;
             }}
             .card {{
-                background: var(--card-bg);
-                border-radius: 1.25rem;
-                padding: 1.75rem;
-                border: 1px solid rgba(82, 96, 109, 0.08);
-                box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+                background: linear-gradient(140deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 250, 255, 0.76) 100%);
+                border-radius: 1.35rem;
+                padding: 1.9rem;
+                border: 1px solid var(--divider-color);
+                box-shadow: 0 15px 38px rgba(15, 23, 42, 0.1);
+                backdrop-filter: blur(6px);
+                position: relative;
+                overflow: hidden;
+            }}
+            .card::before {{
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: linear-gradient(130deg, rgba(99, 102, 241, 0.08) 0%, rgba(14, 165, 233, 0.05) 45%, transparent 100%);
+                pointer-events: none;
             }}
             .graph-card .graph-link {{
                 display: block;
@@ -642,7 +761,7 @@ def generate_report(
                 width: 100%;
                 height: auto;
                 border-radius: 0.75rem;
-                border: 1px solid var(--border-color);
+                border: 1px solid rgba(148, 163, 184, 0.35);
                 background: #fff;
                 display: block;
                 transition: transform 0.2s ease;
@@ -654,20 +773,25 @@ def generate_report(
                 margin-top: 1rem;
                 font-size: 0.95rem;
                 overflow: hidden;
-                border-radius: 0.85rem;
-                box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+                border-radius: 0.95rem;
+                box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+                border: 1px solid var(--divider-color);
             }}
             .styled-table thead {{
-                background: #e0ebff;
+                background: linear-gradient(120deg, rgba(99, 102, 241, 0.22), rgba(96, 165, 250, 0.18));
+                color: #0f172a;
             }}
             .styled-table th,
             .styled-table td {{
                 padding: 0.85rem 1rem;
                 text-align: center;
-                border-bottom: 1px solid var(--border-color);
+                border-bottom: 1px solid rgba(203, 213, 225, 0.6);
             }}
             .styled-table tbody tr:nth-child(even) {{
-                background: rgba(59, 130, 246, 0.05);
+                background: rgba(148, 163, 184, 0.08);
+            }}
+            .styled-table tbody tr:hover {{
+                background: rgba(99, 102, 241, 0.12);
             }}
             @media (max-width: 640px) {{
                 .page-header {{
@@ -679,6 +803,13 @@ def generate_report(
                 .card {{
                     padding: 1.25rem;
                 }}
+                .stats-section {{
+                    padding: 1.75rem 1.5rem;
+                }}
+                .stat-card {{
+                    flex-direction: column;
+                    align-items: flex-start;
+                }}
             }}
         </style>
     </head>
@@ -689,15 +820,21 @@ def generate_report(
                 <p>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             </header>
 
-            <section>
-                <h2>Summary Statistics</h2>
+            <section class='stats-section summary-section'>
+                <div class='section-header'>
+                    <h2>Summary Statistics</h2>
+                    <p class='section-subtitle'>Core results that capture the top-line picture of recent trading activity.</p>
+                </div>
                 <div class='stats-grid'>
                     {summary_html}
                 </div>
             </section>
 
-            <section>
-                <h2>Performance Metrics</h2>
+            <section class='stats-section performance-section'>
+                <div class='section-header'>
+                    <h2>Performance Metrics</h2>
+                    <p class='section-subtitle'>Deeper analytics that surface risk, consistency, and capital efficiency.</p>
+                </div>
                 <div class='stats-grid'>
                     {performance_html}
                 </div>
