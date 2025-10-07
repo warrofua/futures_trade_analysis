@@ -194,10 +194,10 @@ def _save_figure(fig, output_dir, filename):
     return image_path
 
 
-def plot_pnl(df, output_dir=None, show=True):
+def plot_pnl(df, output_dir=None, show=True, figsize=(14, 8)):
     times = df['TransDateTime'].dt.tz_localize(None)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=figsize)
     ax.plot(times, df['CumulativePnL'], marker='o', linestyle='-')
     ax.set_title('Cumulative Profit and Loss Over Time')
     ax.set_xlabel('Transaction Time')
@@ -270,8 +270,8 @@ def aggregate_profit_by_time(df):
     
     return profit_summary
 
-def plot_heatmap(profit_summary, output_dir=None, show=True):
-    fig, ax = plt.subplots(figsize=(12, 8))
+def plot_heatmap(profit_summary, output_dir=None, show=True, figsize=(14, 8)):
+    fig, ax = plt.subplots(figsize=figsize)
     sns.heatmap(profit_summary, annot=True, cmap='RdYlGn', center=0, fmt=".1f", ax=ax)
     ax.set_title('Profitability Heatmap by Day of Week and Hour of Day')
     ax.set_ylabel('Day of Week')
@@ -286,8 +286,8 @@ def plot_heatmap(profit_summary, output_dir=None, show=True):
 
     return image_path
 
-def plot_pnl_distribution(df, output_dir=None, show=True):
-    fig, ax = plt.subplots(figsize=(10, 6))
+def plot_pnl_distribution(df, output_dir=None, show=True, figsize=(14, 8)):
+    fig, ax = plt.subplots(figsize=figsize)
     sns.histplot(df['PnL'], kde=True, color='blue', ax=ax)
     ax.set_title('Distribution of Trade Profit and Loss')
     ax.set_xlabel('Profit and Loss')
@@ -430,7 +430,11 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
     for title, path in graph_paths:
         if path is not None:
             graph_cards.append(
-                f"<div class='card graph-card'><h3>{title}</h3><img src='{path.name}' alt='{title}' loading='lazy'></div>"
+                (
+                    "<div class='card graph-card'><h3>{title}</h3>"
+                    f"<a href='{path.name}' target='_blank' class='graph-link'>"
+                    f"<img src='{path.name}' alt='{title}' loading='lazy'></a></div>"
+                )
             )
 
     summary_items = [
@@ -559,6 +563,16 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
                 border: 1px solid rgba(82, 96, 109, 0.08);
                 box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
             }}
+            .graph-card .graph-link {{
+                display: block;
+                cursor: zoom-in;
+                text-decoration: none;
+                border-radius: 0.75rem;
+                overflow: hidden;
+            }}
+            .graph-card .graph-link:hover img {{
+                transform: scale(1.01);
+            }}
             .graph-card img {{
                 margin-top: 1rem;
                 width: 100%;
@@ -566,6 +580,9 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
                 border-radius: 0.75rem;
                 border: 1px solid var(--border-color);
                 background: #fff;
+                display: block;
+                transition: transform 0.2s ease;
+                image-rendering: optimizeQuality;
             }}
             .styled-table {{
                 width: 100%;
