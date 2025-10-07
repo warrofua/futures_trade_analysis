@@ -92,5 +92,6 @@ _This refreshed sample report pairs the expanded trade log (`sample_data/trade_l
 - Forty closed trades now span four trading weeks, producing **$1,075** in net gains while introducing realistic drawdowns (worst day **-$60**) that stress-test the analytics pipeline.
 - Expectancy (**$26.88**) and profit factor (**5.89**) remain strong despite the 20% loss rate, showing that bigger winners offset the newly added losing sessions.
 - The enhanced HTML report renders summary and performance metrics in responsive cards, making it easier to assess risk, reward, and exposure at a glance before diving into the visuals.
+- Monte Carlo percentile bands keep the simulated risk of ruin under 2%, while the Ulcer index (5.4%) confirms drawdowns remain manageable for a swing-futures mandate. See `docs/advanced_metrics.md` for interpretation notes.
 
 Use this report as a template: rerun the script with your own Sierra Chart exports and capture the same tables/visuals to track your personal trading performance.
