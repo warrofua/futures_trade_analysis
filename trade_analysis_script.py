@@ -484,7 +484,7 @@ def generate_report(
         if path is not None:
             graph_cards.append(
                 (
-                    "<div class='card graph-card'><h3>{title}</h3>"
+                    f"<div class='card graph-card'><h3>{title}</h3>"
                     f"<a href='{path.name}' target='_blank' class='graph-link'>"
                     f"<img src='{path.name}' alt='{title}' loading='lazy'></a></div>"
                 )
