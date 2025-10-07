@@ -284,9 +284,18 @@ def find_nat_rows(df):
 
 def aggregate_profit_by_time(df):
     df = df[df['PnL'] != 0].copy()
-    # Extract hour and day name from 'TransDateTime'
-    df['Hour'] = df['TransDateTime'].dt.hour
-    df['DayOfWeek'] = df['TransDateTime'].dt.day_name()
+
+    # Use the close timestamp when available so realized PnL is attributed to
+    # the time the trade was exited.  Fall back to the open timestamp for
+    # defensive coverage (e.g., missing close times).
+    if 'CloseTime' in df.columns:
+        df['EffectiveTime'] = df['CloseTime'].where(df['CloseTime'].notna(), df['TransDateTime'])
+    else:
+        df['EffectiveTime'] = df['TransDateTime']
+
+    # Extract hour and day name from the effective timestamp
+    df['Hour'] = df['EffectiveTime'].dt.hour
+    df['DayOfWeek'] = df['EffectiveTime'].dt.day_name()
 
     # Aggregate data to calculate total or average profit by day and hour
     profit_summary = df.groupby(['DayOfWeek', 'Hour'])['PnL'].sum().unstack(fill_value=0)
