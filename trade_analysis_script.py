@@ -490,6 +490,30 @@ def generate_report(
                 )
             )
 
+    summary_swatches = [
+        ("#38bdf8", "#0284c7"),
+        ("#f97316", "#ea580c"),
+        ("#22c55e", "#16a34a"),
+        ("#a855f7", "#7c3aed"),
+        ("#ec4899", "#db2777"),
+        ("#facc15", "#eab308"),
+    ]
+    performance_swatches = [
+        ("#6366f1", "#4338ca"),
+        ("#0ea5e9", "#0284c7"),
+        ("#f472b6", "#db2777"),
+        ("#22d3ee", "#06b6d4"),
+        ("#2dd4bf", "#14b8a6"),
+        ("#f97316", "#ea580c"),
+        ("#38bdf8", "#0ea5e9"),
+        ("#facc15", "#eab308"),
+        ("#c084fc", "#a855f7"),
+        ("#34d399", "#059669"),
+        ("#fb7185", "#f43f5e"),
+        ("#f59e0b", "#d97706"),
+        ("#e879f9", "#c026d3"),
+    ]
+
     summary_items = [
         ('Total Closed Trades', summary_stats['total_trades'], '\\u25a3'),
         ('Trading Days Covered', summary_stats['trading_days'], '\\u23f1'),
@@ -498,13 +522,26 @@ def generate_report(
         ('Best Trade', format_currency(summary_stats['best_trade']), '\\u2605'),
         ('Worst Trade', format_currency(summary_stats['worst_trade']), '\\u25bc'),
     ]
-    summary_html = ''.join(
-        "<div class='stat-card summary-card'>"
-        f"<div class='stat-emblem'><span>{icon}</span></div>"
-        f"<div class='stat-content'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
-        "</div>"
-        for label, value, icon in summary_items
-    )
+
+    def _render_stat_cards(items, card_class, swatches):
+        card_markup = []
+        for index, item in enumerate(items):
+            label, value, icon, *custom_swatch = item
+            swatch = custom_swatch[0] if custom_swatch else swatches[index % len(swatches)]
+            start_color, end_color = swatch
+            card_markup.append(
+                "<div class='stat-card {card_class}' style='--swatch-start: {start}; --swatch-end: {end};'>".format(
+                    card_class=card_class,
+                    start=start_color,
+                    end=end_color,
+                )
+                + f"<div class='stat-emblem'><span>{icon}</span></div>"
+                + f"<div class='stat-content'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
+                + "</div>"
+            )
+        return ''.join(card_markup)
+
+    summary_html = _render_stat_cards(summary_items, 'summary-card', summary_swatches)
 
     performance_items = [
         ('Expectancy (per trade)', format_currency(performance_metrics['expectancy']), '\\u03a3'),
@@ -521,13 +558,7 @@ def generate_report(
         ('Median Trade Duration', format_minutes(performance_metrics['median_trade_duration_minutes']), '\\u23f3'),
         ('Total Market Exposure', format_hours(performance_metrics['exposure_hours']), '\\u29bf'),
     ]
-    performance_html = ''.join(
-        "<div class='stat-card performance-card'>"
-        f"<div class='stat-emblem'><span>{icon}</span></div>"
-        f"<div class='stat-content'><span class='stat-label'>{label}</span><span class='stat-value'>{value}</span></div>"
-        "</div>"
-        for label, value, icon in performance_items
-    )
+    performance_html = _render_stat_cards(performance_items, 'performance-card', performance_swatches)
 
     pnl_table_html = pnl_analysis_table.to_html(index=False, classes='styled-table', border=0)
 
@@ -669,6 +700,8 @@ def generate_report(
                 gap: 1.25rem;
                 transition: transform 0.2s ease, box-shadow 0.2s ease;
                 overflow: hidden;
+                --swatch-start: var(--accent-color);
+                --swatch-end: var(--accent-soft);
             }}
             .stat-card::after {{
                 content: '';
@@ -700,12 +733,11 @@ def generate_report(
                 box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
                 position: relative;
                 z-index: 1;
+                background: linear-gradient(135deg, var(--swatch-start), var(--swatch-end));
             }}
-            .summary-card .stat-emblem {{
-                background: linear-gradient(135deg, var(--accent-color), var(--accent-soft));
-            }}
-            .performance-card .stat-emblem {{
-                background: linear-gradient(135deg, var(--accent-warm), var(--accent-alt));
+            .performance-card {{
+                --swatch-start: var(--accent-warm);
+                --swatch-end: var(--accent-alt);
             }}
             .stat-content {{
                 display: flex;
