@@ -97,22 +97,42 @@ def adjust_nat_times(df):
     :param df: DataFrame with the trade data.
     :return: DataFrame with adjusted 'TransDateTime' for NaT values.
     """
-    open_indices = df[df['OpenClose'] == 'open'].index
+    open_indices_by_symbol = {
+        symbol: group.index
+        for symbol, group in df[df['OpenClose'] == 'open'].groupby('Symbol')
+    }
     close_indices = df[df['OpenClose'] == 'close'].index
+    close_indices_by_symbol = {
+        symbol: group.index
+        for symbol, group in df[df['OpenClose'] == 'close'].groupby('Symbol')
+    }
 
     # Loop through close indices to adjust NaT values based on the open time or the next close time
     for close_index in close_indices:
         if pd.isna(df.at[close_index, 'TransDateTime']):
-            # Find the preceding open trade's index for the current close trade
-            preceding_open_index = open_indices[open_indices < close_index].max()
-            # If there's a valid open trade before this close trade, add 1 minute to its time
-            if pd.notna(preceding_open_index):
-                df.at[close_index, 'TransDateTime'] = df.at[preceding_open_index, 'TransDateTime'] + Minute(1)
-            else:
-                # If there's no valid open trade before, try to subtract 1 minute from the next valid close time
-                following_close_index = close_indices[close_indices > close_index].min()
-                if pd.notna(following_close_index):
-                    df.at[close_index, 'TransDateTime'] = df.at[following_close_index, 'TransDateTime'] - Minute(1)
+            symbol = df.at[close_index, 'Symbol']
+
+            preceding_open_index = None
+            if symbol in open_indices_by_symbol:
+                symbol_open_indices = open_indices_by_symbol[symbol]
+                preceding_open_candidates = symbol_open_indices[symbol_open_indices < close_index]
+                if len(preceding_open_candidates) > 0:
+                    preceding_open_index = preceding_open_candidates.max()
+
+            if preceding_open_index is not None:
+                open_time = df.at[preceding_open_index, 'TransDateTime']
+                if pd.notna(open_time):
+                    df.at[close_index, 'TransDateTime'] = open_time + Minute(1)
+                    continue
+
+            if symbol in close_indices_by_symbol:
+                symbol_close_indices = close_indices_by_symbol[symbol]
+                following_close_candidates = symbol_close_indices[symbol_close_indices > close_index]
+                for following_close_index in following_close_candidates:
+                    following_time = df.at[following_close_index, 'TransDateTime']
+                    if pd.notna(following_time):
+                        df.at[close_index, 'TransDateTime'] = following_time - Minute(1)
+                        break
 
     return df
 
