@@ -531,7 +531,9 @@ def generate_report(
             <section>
                 <h2>Trade-Level Highlights</h2>
                 <div class='card'>
-                    {trade_highlights_html}
+                    <div class='table-scroll'>
+                        {trade_highlights_html}
+                    </div>
                 </div>
             </section>
         """
@@ -648,12 +650,15 @@ def generate_report(
                 transition: transform 0.2s ease;
                 image-rendering: optimizeQuality;
             }}
+            .table-scroll {{
+                width: 100%;
+                overflow-x: auto;
+            }}
             .styled-table {{
                 width: 100%;
                 border-collapse: collapse;
                 margin-top: 1rem;
                 font-size: 0.95rem;
-                overflow: hidden;
                 border-radius: 0.85rem;
                 box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
             }}
