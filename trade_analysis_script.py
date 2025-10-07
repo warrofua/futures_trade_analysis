@@ -67,14 +67,15 @@ def load_data(filepath, usecols):
     df = pd.read_csv(filepath, sep='\t', usecols=usecols)
     
     # Convert 'TransDateTime' to datetime objects
-    df['TransDateTime'] = pd.to_datetime(df['TransDateTime'], errors='coerce')
-    
-    # Localize the timezone to UTC since the original times are in UTC
-    df['TransDateTime'] = df['TransDateTime'].dt.tz_localize('UTC')
-    
+    trans_datetime = pd.to_datetime(df['TransDateTime'], errors='coerce')
+
+    # Localize only if the timestamps are timezone-naïve
+    if trans_datetime.dt.tz is None:
+        trans_datetime = trans_datetime.dt.tz_localize('UTC')
+
     # Convert from UTC to Eastern Time, taking into account DST
     eastern = pytz.timezone('US/Eastern')
-    df['TransDateTime'] = df['TransDateTime'].dt.tz_convert(eastern)
+    df['TransDateTime'] = trans_datetime.dt.tz_convert(eastern)
 
     return df
 
