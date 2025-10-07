@@ -218,14 +218,16 @@ def plot_pnl(df, output_dir=None, show=True):
 
     return image_path
 
-def display_pnl_table(df, num_trades=10):
+def display_pnl_table(df, num_trades=10, print_output=False, return_html=False):
     """
-    Display a table of the profit/loss calculations for the first 'num_trades' trades.
+    Prepare a table of the profit/loss calculations for the first 'num_trades' trades.
+
     :param df: DataFrame with calculated P&L.
-    :param num_trades: Number of trades to display.
+    :param num_trades: Number of trades to include.
+    :param print_output: Whether to print the formatted table to stdout.
+    :param return_html: Whether to also return the table rendered as HTML.
+    :return: Tuple containing the formatted DataFrame and, optionally, the HTML string.
     """
-    # Filter the DataFrame to only include rows where PnL calculation was performed
-    # and limit the number of rows based on 'num_trades'
     df_display = df[df['PnL'] != 0].head(num_trades)[
         [
             'TransDateTime',
@@ -240,11 +242,36 @@ def display_pnl_table(df, num_trades=10):
             'TradeDurationMinutes'
         ]
     ].copy()
-    if not df_display.empty:
-        df_display['TransDateTime'] = pd.to_datetime(df_display['TransDateTime']).dt.tz_localize(None)
-        df_display['CloseTime'] = pd.to_datetime(df_display['CloseTime']).dt.tz_localize(None)
-        df_display['TradeDurationMinutes'] = df_display['TradeDurationMinutes'].round(2)
-    print(df_display)
+
+    formatted_df = df_display.copy()
+
+    if not formatted_df.empty:
+        formatted_df['TransDateTime'] = pd.to_datetime(formatted_df['TransDateTime']).dt.tz_localize(None)
+        formatted_df['CloseTime'] = pd.to_datetime(formatted_df['CloseTime']).dt.tz_localize(None)
+
+        formatted_df['TransDateTime'] = formatted_df['TransDateTime'].apply(
+            lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(x) else 'N/A'
+        )
+        formatted_df['CloseTime'] = formatted_df['CloseTime'].apply(
+            lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notna(x) else 'N/A'
+        )
+
+        formatted_df['FillPrice'] = formatted_df['FillPrice'].apply(format_currency)
+        formatted_df['ClosePrice'] = formatted_df['ClosePrice'].apply(format_currency)
+        formatted_df['PnL'] = formatted_df['PnL'].apply(format_currency)
+        formatted_df['CumulativePnL'] = formatted_df['CumulativePnL'].apply(format_currency)
+        formatted_df['TradeDurationMinutes'] = formatted_df['TradeDurationMinutes'].apply(
+            lambda x: format_minutes(x, decimals=2) if pd.notna(x) else 'N/A'
+        )
+
+    if print_output:
+        print(formatted_df)
+
+    table_html = None
+    if return_html:
+        table_html = formatted_df.to_html(index=False, classes='styled-table', border=0, escape=False)
+
+    return formatted_df, table_html
 
 def find_nat_rows(df):
     """
@@ -422,7 +449,14 @@ def calculate_performance_metrics(df):
     }
 
 
-def generate_report(report_dir, summary_stats, performance_metrics, graph_paths, pnl_analysis_table):
+def generate_report(
+    report_dir,
+    summary_stats,
+    performance_metrics,
+    graph_paths,
+    pnl_analysis_table,
+    trade_highlights_html=None
+):
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / 'trade_analysis_report.html'
 
@@ -467,6 +501,17 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
     )
 
     pnl_table_html = pnl_analysis_table.to_html(index=False, classes='styled-table', border=0)
+
+    trade_highlights_section = ""
+    if trade_highlights_html:
+        trade_highlights_section = f"""
+            <section>
+                <h2>Trade-Level Highlights</h2>
+                <div class='card'>
+                    {trade_highlights_html}
+                </div>
+            </section>
+        """
 
     html_content = f"""<!DOCTYPE html>
     <html lang='en'>
@@ -622,6 +667,8 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
                 </div>
             </section>
 
+            {trade_highlights_section}
+
             <section>
                 <h2>Visual Highlights</h2>
                 <div class='card-grid'>
@@ -691,8 +738,13 @@ def main():
         # Calculate P&L and add to DataFrame
         df_with_pnl = calculate_pnl(df_preprocessed)
 
-        # Display the table of calculations for the first 10 trades
-        display_pnl_table(df_with_pnl, 10)
+        # Display the table of calculations for the first 10 trades and capture HTML for reporting
+        _, trade_highlights_html = display_pnl_table(
+            df_with_pnl,
+            10,
+            print_output=True,
+            return_html=True
+        )
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         report_dir = Path('reports') / f'trade_report_{timestamp}'
@@ -741,7 +793,8 @@ def main():
                 ('Profitability Heatmap by Day and Hour', heatmap_path),
                 ('Distribution of Trade Profit and Loss', pnl_distribution_path)
             ],
-            pnl_analysis_table
+            pnl_analysis_table,
+            trade_highlights_html=trade_highlights_html
         )
 
         print(f"Report generated at {report_path}")
