@@ -502,7 +502,7 @@ def summarise_drawdown_events(times, cumulative_pnl):
             start_idx = idx
         elif value == 0 and in_drawdown:
             end_idx = idx
-            depth = drawdown[start_idx:end_idx].min()
+            depth = drawdown.iloc[start_idx:end_idx].min()
             peak_time = times.iloc[start_idx]
             recovery_time = times.iloc[end_idx]
             duration = end_idx - start_idx
@@ -517,7 +517,7 @@ def summarise_drawdown_events(times, cumulative_pnl):
             in_drawdown = False
 
     if in_drawdown and start_idx is not None:
-        depth = drawdown[start_idx:].min()
+        depth = drawdown.iloc[start_idx:].min()
         peak_time = times.iloc[start_idx]
         recovery_time = times.iloc[-1]
         duration = len(drawdown) - start_idx
