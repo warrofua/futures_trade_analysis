@@ -260,15 +260,32 @@ def aggregate_profit_by_time(df):
     # Extract hour and day name from 'TransDateTime'
     df['Hour'] = df['TransDateTime'].dt.hour
     df['DayOfWeek'] = df['TransDateTime'].dt.day_name()
-    
+
     # Aggregate data to calculate total or average profit by day and hour
     profit_summary = df.groupby(['DayOfWeek', 'Hour'])['PnL'].sum().unstack(fill_value=0)
-    
+
     # Sort the index based on day order
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     profit_summary = profit_summary.reindex(day_order)
-    
+
     return profit_summary
+
+
+def build_profitability_tables(profit_summary, df_with_pnl):
+    filtered_df = df_with_pnl[df_with_pnl['PnL'] != 0].copy()
+
+    profitability_html = profit_summary.to_html(classes='styled-table', border=0, float_format=lambda x: f"{x:,.2f}")
+
+    daily_net_pnl = (
+        filtered_df.groupby(filtered_df['TransDateTime'].dt.date)['PnL']
+        .sum()
+        .reset_index(name='Net PnL')
+    )
+    daily_net_pnl.columns = ['Date', 'Net PnL']
+    daily_net_pnl['Net PnL'] = daily_net_pnl['Net PnL'].apply(format_currency)
+    daily_net_pnl_html = daily_net_pnl.to_html(index=False, classes='styled-table', border=0)
+
+    return profitability_html, daily_net_pnl_html
 
 def plot_heatmap(profit_summary, output_dir=None, show=True):
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -422,7 +439,15 @@ def calculate_performance_metrics(df):
     }
 
 
-def generate_report(report_dir, summary_stats, performance_metrics, graph_paths, pnl_analysis_table):
+def generate_report(
+    report_dir,
+    summary_stats,
+    performance_metrics,
+    graph_paths,
+    pnl_analysis_table,
+    day_hour_summary_html,
+    daily_net_pnl_html
+):
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / 'trade_analysis_report.html'
 
@@ -630,6 +655,20 @@ def generate_report(report_dir, summary_stats, performance_metrics, graph_paths,
             </section>
 
             <section>
+                <h2>Profitability by Day and Hour</h2>
+                <div class='card'>
+                    {day_hour_summary_html}
+                </div>
+            </section>
+
+            <section>
+                <h2>Daily Net Profit and Loss</h2>
+                <div class='card'>
+                    {daily_net_pnl_html}
+                </div>
+            </section>
+
+            <section>
                 <h2>Trade Distribution by Profit/Loss Range</h2>
                 <div class='card'>
                     {pnl_table_html}
@@ -701,6 +740,7 @@ def main():
         cumulative_pnl_path = plot_pnl(df_with_pnl, output_dir=report_dir, show=False)
 
         profit_summary = aggregate_profit_by_time(df_with_pnl)
+        day_hour_summary_html, daily_net_pnl_html = build_profitability_tables(profit_summary, df_with_pnl)
         heatmap_path = plot_heatmap(profit_summary, output_dir=report_dir, show=False)
         pnl_distribution_path = plot_pnl_distribution(df_with_pnl, output_dir=report_dir, show=False)
         pnl_analysis_table = create_pnl_analysis_table(df_with_pnl)
@@ -741,7 +781,9 @@ def main():
                 ('Profitability Heatmap by Day and Hour', heatmap_path),
                 ('Distribution of Trade Profit and Loss', pnl_distribution_path)
             ],
-            pnl_analysis_table
+            pnl_analysis_table,
+            day_hour_summary_html,
+            daily_net_pnl_html
         )
 
         print(f"Report generated at {report_path}")
