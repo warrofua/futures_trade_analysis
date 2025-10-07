@@ -484,7 +484,7 @@ def generate_report(
         if path is not None:
             graph_cards.append(
                 (
-                    "<div class='card graph-card'><h3>{title}</h3>"
+                    f"<div class='card graph-card'><h3>{title}</h3>"
                     f"<a href='{path.name}' target='_blank' class='graph-link'>"
                     f"<img src='{path.name}' alt='{title}' loading='lazy'></a></div>"
                 )
@@ -537,7 +537,9 @@ def generate_report(
             <section>
                 <h2>Trade-Level Highlights</h2>
                 <div class='card'>
-                    {trade_highlights_html}
+                    <div class='table-scroll'>
+                        {trade_highlights_html}
+                    </div>
                 </div>
             </section>
         """
@@ -766,6 +768,10 @@ def generate_report(
                 display: block;
                 transition: transform 0.2s ease;
                 image-rendering: optimizeQuality;
+            }}
+            .table-scroll {{
+                width: 100%;
+                overflow-x: auto;
             }}
             .styled-table {{
                 width: 100%;
