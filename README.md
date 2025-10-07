@@ -7,6 +7,7 @@ This repository contains a Python-based analytics workflow for exploring Sierra 
 - **Day/hour profitability heatmap** – surface the sessions that historically worked best (or worst) for you.
 - **PnL distribution histogram** – highlight the skew of winning versus losing trades.
 - **PnL range summary table** – break trades into performance buckets for rapid review.
+- **Institutional-grade performance metrics** – calculate expectancy, Sharpe ratio, win/loss efficiencies, drawdowns, and time-in-market insights.
 - **Sample dataset & report** – included so you can explore the workflow without exporting your own log first.
 
 ## Quick Start
@@ -43,12 +44,12 @@ The script expects a tab-separated text file with at least the following Sierra 
 Trades in other instruments can be analyzed by adjusting the `tick_value` and `ticks_per_point` constants in `calculate_trade_pnl` inside `trade_analysis_script.py`.
 
 ## Sample Data & Report
-A comprehensive sample dataset is provided under [`sample_data/trade_log_sample.txt`](sample_data/trade_log_sample.txt). The companion [sample report](docs/sample_report.md) demonstrates what the analysis outputs look like when run against that file, including:
+A comprehensive two-week sample dataset is provided under [`sample_data/trade_log_sample.txt`](sample_data/trade_log_sample.txt). The companion [sample report](docs/sample_report.md) demonstrates what the analysis outputs look like when run against that file, including:
 
 - the cumulative P&L progression,
 - day/hour profitability insights,
 - PnL distribution buckets, and
-- key takeaways observed from the trades.
+- key takeaways observed from the trades, expectancy, Sharpe ratio, and other performance metrics.
 
 Use the sample dataset to familiarize yourself with the workflow or to validate new features with predictable results.
 
